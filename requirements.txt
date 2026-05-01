@@ -1,0 +1,7 @@
+PySide6
+mysql-connector-python
+matplotlib
+jdatetime
+reportlab
+arabic-reshaper
+python-bidi
