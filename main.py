@@ -1,4 +1,3 @@
-from operator import index
 import sys
 import os
 from datetime import datetime
@@ -6,7 +5,7 @@ import jdatetime
 from PySide6.QtWidgets import (QApplication, QMainWindow, QScrollArea, QWidget, QVBoxLayout,
                                QTabWidget, QFormLayout, QLineEdit, QComboBox,
                                QPushButton, QToolBar, QSpinBox, QDoubleSpinBox, 
-                               QLabel, QMessageBox, QHBoxLayout, QTableWidget, QHeaderView, QFileDialog, QCheckBox,QTableWidgetItem )
+                               QLabel, QMessageBox, QHBoxLayout, QTableWidget, QHeaderView, QFileDialog, QCheckBox, QTableWidgetItem, QInputDialog)
 from PySide6.QtCore import Qt, QDate
 from PySide6.QtGui import QAction
 import mysql.connector
@@ -24,15 +23,41 @@ from reportlab.pdfgen import canvas
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.lib.units import cm
+import configparser
 
-# Database Configuration (Update with your credentials)
-DB_CONFIG = {
-    'host': 'localhost',
-    'user': 'book_admin',
-    'password': 'book',
-    'database': 'book_publishing',
-    'charset': 'utf8mb4'
-}
+def get_db_config():
+    """Reads database config from config.ini, falls back to hard‑coded defaults."""
+    # Default config
+    default_config = {
+        'host': 'localhost',
+        'user': 'book_admin',
+        'password': 'book',
+        'database': 'book_publishing',
+        'charset': 'utf8mb4'
+    }
+
+    # Determine the path of config.ini (same directory as the executable/script)
+    if getattr(sys, 'frozen', False):
+        # Running as a PyInstaller bundle
+        app_dir = os.path.dirname(sys.executable)
+    else:
+        app_dir = os.path.dirname(os.path.abspath(__file__))
+    
+    config_path = os.path.join(app_dir, 'config.ini')
+
+    config = configparser.ConfigParser()
+    if os.path.exists(config_path):
+        config.read(config_path, encoding='utf-8')
+        if 'database' in config:
+            for key in default_config.keys():
+                if key in config['database']:
+                    default_config[key] = config['database'][key]
+
+    return default_config
+
+DELETE_PASSWORD = "admin"
+
+DB_CONFIG = get_db_config()
 
 class BookCostCalculator(QMainWindow):
     def __init__(self):
@@ -53,7 +78,10 @@ class BookCostCalculator(QMainWindow):
             self.db_conn = mysql.connector.connect(**DB_CONFIG)
             self.cursor = self.db_conn.cursor(dictionary=True)
         except mysql.connector.Error as err:
-            QMessageBox.critical(self, "خطای دیتابیس", f"ارتباط با دیتابیس برقرار نشد:\n{err}")
+            QMessageBox.critical(
+                self, "خطای دیتابیس",
+                f"ارتباط با دیتابیس برقرار نشد.\nلطفاً فایل config.ini را بررسی کنید.\n\n{err}"
+            )
             sys.exit(1)
 
     def init_ui(self):
@@ -63,8 +91,17 @@ class BookCostCalculator(QMainWindow):
         
         save_action = QAction("ذخیره پروژه", self)
         save_action.triggered.connect(self.save_project_to_db)
+        
         exit_action = QAction("خروج", self)
         exit_action.triggered.connect(self.close)
+        
+        open_action = QAction("بازکردن پروژه", self)
+        open_action.triggered.connect(self.load_selected_project)
+        toolbar.addAction(open_action)
+        
+        delete_action = QAction("حذف پروژه", self)
+        delete_action.triggered.connect(self.delete_project)
+        toolbar.addAction(delete_action)
         
         toolbar.addAction(save_action)
         toolbar.addAction(exit_action)
@@ -109,7 +146,7 @@ class BookCostCalculator(QMainWindow):
         self.project_table.doubleClicked.connect(self.open_project)  # ← open on double click
         
         new_project_btn = QPushButton("ایجاد پروژه جدید")
-        new_project_btn.clicked.connect(lambda: self.tabs.setCurrentIndex(1))
+        new_project_btn.clicked.connect(self.new_project)   # was: lambda: self.tabs.setCurrentIndex(1)
         
         layout.addLayout(search_layout)
         layout.addWidget(self.project_table)
@@ -312,15 +349,12 @@ class BookCostCalculator(QMainWindow):
         # تنظیم فونت کلی چارت (اختیاری، اگر فونت سیستم ساپورت کند)
         self.figure.tight_layout()
         self.canvas.draw()
-    
     def save_project_to_db(self):
-        # 1. Ensure a title is provided
         title = self.inputs['عنوان کتاب'].text().strip()
         if not title:
             QMessageBox.warning(self, "خطا", "لطفاً حداقل عنوان کتاب را وارد کنید.")
             return
 
-        # Helper function to safely get text from either QLineEdit or QComboBox
         def get_val(key):
             widget = self.inputs.get(key)
             if isinstance(widget, QComboBox):
@@ -331,7 +365,6 @@ class BookCostCalculator(QMainWindow):
                 return widget.value()
             return None
 
-        # Clean the final price strings (remove commas) to save as decimals
         try:
             total_cost = float(self.lbl_final_total.text().replace(',', ''))
             single_cost = float(self.lbl_single_price.text().replace(',', ''))
@@ -340,83 +373,126 @@ class BookCostCalculator(QMainWindow):
             single_cost = 0
 
         try:
-            # 2. Insert into the main `projects` table
-            query_projects = """
-                INSERT INTO projects 
-                (title, subtitle, creation_date, qate, tiraj, royalty_percent, total_cost, single_book_cost)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-            """
-            val_projects = (
-                title,
-                get_val('زیر عنوان کتاب'),
-                get_val('تاریخ'),
-                get_val('قطع'),
-                get_val('تیراژ'),
-                self.royalty_input.value(),
-                total_cost,
-                single_cost
-            )
-            
-            self.cursor.execute(query_projects, val_projects)
-            project_id = self.cursor.lastrowid # Get the ID of the newly created project
-
-            # 3. Insert into the `project_details` table
-            query_details = """
-                INSERT INTO project_details (
-                    project_id, noeh_kaghaz_matn, noeh_chap_matn, noeh_rang_matn, noeh_zink_matn,
-                    noeh_kaghaz_jeld, noeh_chap_jeld, noeh_rang_jeld, noeh_zink_jeld,
-                    hazineh_talif, hazineh_tarjomeh, hazineh_tasvir, hazineh_virayesh,
-                    hazineh_tarahi_jeld, hazineh_modiriat_atelieh, hazineh_zink, hazineh_chap_matn,
-                    hazineh_chap_jeld, hazineh_kaghaz_matn, hazineh_kaghaz_jeld, hazineh_rokesh_salfon,
-                    hazineh_moghava_maghzi, hazineh_ghaleb_letterpress, hazineh_ghaleb_diecut,
-                    hazineh_khat_ta, hazineh_malzomat, hazineh_jeldsazi, hazineh_sahafi,
-                    hazineh_boresh_bastebandi, hazineh_haml_naghl, hazineh_montaj
-                ) VALUES (
-                    %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+            # 1. Check if we are updating an existing project
+            if hasattr(self, 'current_project_id') and self.current_project_id is not None:
+                # --- UPDATE existing project ---
+                query_projects = """
+                    UPDATE projects SET
+                        title = %s, subtitle = %s, creation_date = %s, qate = %s,
+                        tiraj = %s, royalty_percent = %s, total_cost = %s, single_book_cost = %s
+                    WHERE id = %s
+                """
+                val_projects = (
+                    title,
+                    get_val('زیر عنوان کتاب'),
+                    get_val('تاریخ'),
+                    get_val('قطع'),
+                    get_val('تیراژ'),
+                    self.royalty_input.value(),
+                    total_cost,
+                    single_cost,
+                    self.current_project_id
                 )
-            """
-            
-            # Match the order of the query above with the dictionary keys we created earlier
-            val_details = (
-                project_id,
-                get_val('نوع کاغذ متن'), get_val('نوع چاپ متن'), get_val('نوع رنگ متن'), get_val('نوع زینک متن'),
-                get_val('نوع کاغذ جلد'), get_val('نوع چاپ جلد'), get_val('نوع رنگ جلد'), get_val('نوع زینک جلد'),
-                self.cost_inputs.get('هزینه تالیف', QDoubleSpinBox()).value(),
-                self.cost_inputs.get('هزینه ترجمه', QDoubleSpinBox()).value(),
-                self.cost_inputs.get('هزینه تصویرگری', QDoubleSpinBox()).value(),
-                self.cost_inputs.get('هزینه ویرایش', QDoubleSpinBox()).value(),
-                self.cost_inputs.get('هزینه طراحی جلد', QDoubleSpinBox()).value(),
-                self.cost_inputs.get('هزینه مديريت آتليه', QDoubleSpinBox()).value(),
-                self.cost_inputs.get('هزینه زینک', QDoubleSpinBox()).value(),
-                self.cost_inputs.get('هزینه چاپ متن', QDoubleSpinBox()).value(),
-                self.cost_inputs.get('هزینه چاپ جلد', QDoubleSpinBox()).value(),
-                self.cost_inputs.get('هزینه کاغذ متن', QDoubleSpinBox()).value(),
-                self.cost_inputs.get('هزینه کاغذ جلد', QDoubleSpinBox()).value(),
-                self.cost_inputs.get('هزینه روکش سلفون', QDoubleSpinBox()).value(),
-                self.cost_inputs.get('هزینه مقوای مغذی', QDoubleSpinBox()).value(),
-                self.cost_inputs.get('هزینه قالب لترپرس', QDoubleSpinBox()).value(),
-                self.cost_inputs.get('هزینه قالب دايكات', QDoubleSpinBox()).value(),
-                self.cost_inputs.get('هزینه خط تا', QDoubleSpinBox()).value(),
-                self.cost_inputs.get('هزینه ملزومات', QDoubleSpinBox()).value(),
-                self.cost_inputs.get('هزینه جلدسازی', QDoubleSpinBox()).value(),
-                self.cost_inputs.get('هزینه صحافی', QDoubleSpinBox()).value(),
-                self.cost_inputs.get('هزینه برش و بسته‌بندی', QDoubleSpinBox()).value(),
-                self.cost_inputs.get('هزینه حمل و نقل', QDoubleSpinBox()).value(),
-                self.cost_inputs.get('هزینه مونتاژ', QDoubleSpinBox()).value()
-            )
+                self.cursor.execute(query_projects, val_projects)
 
-            self.cursor.execute(query_details, val_details)
-            
-            # Commit the transaction to the database
+                # Update project_details
+                query_details = """
+                    UPDATE project_details SET
+                        noeh_kaghaz_matn = %s, noeh_chap_matn = %s, noeh_rang_matn = %s, noeh_zink_matn = %s,
+                        noeh_kaghaz_jeld = %s, noeh_chap_jeld = %s, noeh_rang_jeld = %s, noeh_zink_jeld = %s,
+                        hazineh_talif = %s, hazineh_tarjomeh = %s, hazineh_tasvir = %s, hazineh_virayesh = %s,
+                        hazineh_tarahi_jeld = %s, hazineh_modiriat_atelieh = %s, hazineh_zink = %s,
+                        hazineh_chap_matn = %s, hazineh_chap_jeld = %s, hazineh_kaghaz_matn = %s,
+                        hazineh_kaghaz_jeld = %s, hazineh_rokesh_salfon = %s, hazineh_moghava_maghzi = %s,
+                        hazineh_ghaleb_letterpress = %s, hazineh_ghaleb_diecut = %s, hazineh_khat_ta = %s,
+                        hazineh_malzomat = %s, hazineh_jeldsazi = %s, hazineh_sahafi = %s,
+                        hazineh_boresh_bastebandi = %s, hazineh_haml_naghl = %s, hazineh_montaj = %s
+                    WHERE project_id = %s
+                """
+                val_details = (
+                    get_val('نوع کاغذ متن'), get_val('نوع چاپ متن'), get_val('نوع رنگ متن'), get_val('نوع زینک متن'),
+                    get_val('نوع کاغذ جلد'), get_val('نوع چاپ جلد'), get_val('نوع رنگ جلد'), get_val('نوع زینک جلد'),
+                    self.cost_inputs['هزینه تالیف'].value(), self.cost_inputs['هزینه ترجمه'].value(),
+                    self.cost_inputs['هزینه تصویرگری'].value(), self.cost_inputs['هزینه ویرایش'].value(),
+                    self.cost_inputs['هزینه طراحی جلد'].value(), self.cost_inputs['هزینه مديريت آتليه'].value(),
+                    self.cost_inputs['هزینه زینک'].value(), self.cost_inputs['هزینه چاپ متن'].value(),
+                    self.cost_inputs['هزینه چاپ جلد'].value(), self.cost_inputs['هزینه کاغذ متن'].value(),
+                    self.cost_inputs['هزینه کاغذ جلد'].value(), self.cost_inputs['هزینه روکش سلفون'].value(),
+                    self.cost_inputs['هزینه مقوای مغذی'].value(), self.cost_inputs['هزینه قالب لترپرس'].value(),
+                    self.cost_inputs['هزینه قالب دايكات'].value(), self.cost_inputs['هزینه خط تا'].value(),
+                    self.cost_inputs['هزینه ملزومات'].value(), self.cost_inputs['هزینه جلدسازی'].value(),
+                    self.cost_inputs['هزینه صحافی'].value(), self.cost_inputs['هزینه برش و بسته‌بندی'].value(),
+                    self.cost_inputs['هزینه حمل و نقل'].value(), self.cost_inputs['هزینه مونتاژ'].value(),
+                    self.current_project_id
+                )
+                self.cursor.execute(query_details, val_details)
+
+            else:
+                # --- INSERT new project ---
+                query_projects = """
+                    INSERT INTO projects 
+                    (title, subtitle, creation_date, qate, tiraj, royalty_percent, total_cost, single_book_cost)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                """
+                val_projects = (
+                    title,
+                    get_val('زیر عنوان کتاب'),
+                    get_val('تاریخ'),
+                    get_val('قطع'),
+                    get_val('تیراژ'),
+                    self.royalty_input.value(),
+                    total_cost,
+                    single_cost
+                )
+                self.cursor.execute(query_projects, val_projects)
+                project_id = self.cursor.lastrowid
+
+                # Insert project_details
+                query_details = """
+                    INSERT INTO project_details (
+                        project_id, noeh_kaghaz_matn, noeh_chap_matn, noeh_rang_matn, noeh_zink_matn,
+                        noeh_kaghaz_jeld, noeh_chap_jeld, noeh_rang_jeld, noeh_zink_jeld,
+                        hazineh_talif, hazineh_tarjomeh, hazineh_tasvir, hazineh_virayesh,
+                        hazineh_tarahi_jeld, hazineh_modiriat_atelieh, hazineh_zink, hazineh_chap_matn,
+                        hazineh_chap_jeld, hazineh_kaghaz_matn, hazineh_kaghaz_jeld, hazineh_rokesh_salfon,
+                        hazineh_moghava_maghzi, hazineh_ghaleb_letterpress, hazineh_ghaleb_diecut,
+                        hazineh_khat_ta, hazineh_malzomat, hazineh_jeldsazi, hazineh_sahafi,
+                        hazineh_boresh_bastebandi, hazineh_haml_naghl, hazineh_montaj
+                    ) VALUES (
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                    )
+                """
+                val_details = (
+                    project_id,
+                    get_val('نوع کاغذ متن'), get_val('نوع چاپ متن'), get_val('نوع رنگ متن'), get_val('نوع زینک متن'),
+                    get_val('نوع کاغذ جلد'), get_val('نوع چاپ جلد'), get_val('نوع رنگ جلد'), get_val('نوع زینک جلد'),
+                    self.cost_inputs['هزینه تالیف'].value(), self.cost_inputs['هزینه ترجمه'].value(),
+                    self.cost_inputs['هزینه تصویرگری'].value(), self.cost_inputs['هزینه ویرایش'].value(),
+                    self.cost_inputs['هزینه طراحی جلد'].value(), self.cost_inputs['هزینه مديريت آتليه'].value(),
+                    self.cost_inputs['هزینه زینک'].value(), self.cost_inputs['هزینه چاپ متن'].value(),
+                    self.cost_inputs['هزینه چاپ جلد'].value(), self.cost_inputs['هزینه کاغذ متن'].value(),
+                    self.cost_inputs['هزینه کاغذ جلد'].value(), self.cost_inputs['هزینه روکش سلفون'].value(),
+                    self.cost_inputs['هزینه مقوای مغذی'].value(), self.cost_inputs['هزینه قالب لترپرس'].value(),
+                    self.cost_inputs['هزینه قالب دايكات'].value(), self.cost_inputs['هزینه خط تا'].value(),
+                    self.cost_inputs['هزینه ملزومات'].value(), self.cost_inputs['هزینه جلدسازی'].value(),
+                    self.cost_inputs['هزینه صحافی'].value(), self.cost_inputs['هزینه برش و بسته‌بندی'].value(),
+                    self.cost_inputs['هزینه حمل و نقل'].value(), self.cost_inputs['هزینه مونتاژ'].value()
+                )
+                self.cursor.execute(query_details, val_details)
+
+                # Store the new ID so subsequent saves update it
+                self.current_project_id = project_id
+
+            # Commit and refresh project list
             self.db_conn.commit()
-            
-            QMessageBox.information(self, "موفقیت", "اطلاعات پروژه با موفقیت در دیتابیس ذخیره شد!")
-            
-        except mysql.connector.Error as err:
-            self.db_conn.rollback() # If something fails, revert the changes
-            QMessageBox.critical(self, "خطای ذخیره‌سازی", f"مشکلی در ذخیره اطلاعات پیش آمد:\n{err}")
+            self.load_projects()  # reload the table to show changes
+            QMessageBox.information(self, "موفقیت", "اطلاعات پروژه با موفقیت ذخیره شد!")
 
+        except mysql.connector.Error as err:
+            self.db_conn.rollback()
+            QMessageBox.critical(self, "خطای ذخیره‌سازی", f"مشکلی در ذخیره اطلاعات پیش آمد:\n{err}")
+        
     def setup_report_tab(self):
             layout = QVBoxLayout()
             layout.addWidget(QLabel("لطفاً بخش‌هایی که می‌خواهید در گزارش PDF چاپ شوند را انتخاب کنید:"))
@@ -564,25 +640,28 @@ class BookCostCalculator(QMainWindow):
         self.load_projects(search_text if search_text else None)
         
     def open_project(self):
-        """Loads the selected project's data into the ورود اطلاعات tab."""
+        """Called when a row is double‑clicked."""
         row = index.row()
         project_id_item = self.project_table.item(row, 0)
         if not project_id_item:
             return
-        
         project_id = int(project_id_item.text())
-        
+        self.load_project_by_id(project_id)
+    
+    def load_project_by_id(self, project_id):
+        """Loads a project's data into the details tab given its ID."""
         try:
             # Fetch main project info
             self.cursor.execute("SELECT * FROM projects WHERE id = %s", (project_id,))
             project = self.cursor.fetchone()
             if not project:
+                QMessageBox.warning(self, "خطا", "پروژه‌ای با این شناسه یافت نشد.")
                 return
-            
+
             # Fetch detailed info
             self.cursor.execute("SELECT * FROM project_details WHERE project_id = %s", (project_id,))
             details = self.cursor.fetchone()
-            
+
             # Populate basic fields
             self.inputs['عنوان کتاب'].setText(project['title'])
             self.inputs['زیر عنوان کتاب'].setText(project['subtitle'] if project['subtitle'] else '')
@@ -590,7 +669,7 @@ class BookCostCalculator(QMainWindow):
             self.inputs['قطع'].setCurrentText(project['qate'] if project['qate'] else '')
             self.inputs['تیراژ'].setValue(project['tiraj'])
             self.royalty_input.setValue(project['royalty_percent'])
-            
+
             # Populate dynamic types if details exist
             if details:
                 type_mapping = {
@@ -606,8 +685,7 @@ class BookCostCalculator(QMainWindow):
                 for persian_key, col_name in type_mapping.items():
                     if col_name in details and details[col_name]:
                         self.inputs[persian_key].setCurrentText(details[col_name])
-                
-                # Populate costs
+
                 cost_mapping = {
                     'هزینه تالیف': 'hazineh_talif',
                     'هزینه ترجمه': 'hazineh_tarjomeh',
@@ -635,15 +713,113 @@ class BookCostCalculator(QMainWindow):
                 for persian_key, col_name in cost_mapping.items():
                     if col_name in details and details[col_name] is not None:
                         self.cost_inputs[persian_key].setValue(float(details[col_name]))
-            
-            # Store the project ID for later update (if you want to update instead of inserting)
-            self.current_project_id = project_id  
-            
+
+            # Store the project ID for possible update later
+            self.current_project_id = project_id
+
             self.tabs.setCurrentIndex(1)  # Switch to details tab
             QMessageBox.information(self, "بارگذاری", "پروژه با موفقیت بارگذاری شد. پس از ویرایش می‌توانید ذخیره کنید.")
-        
+
         except mysql.connector.Error as err:
             QMessageBox.critical(self, "خطا", f"بارگذاری پروژه با خطا مواجه شد:\n{err}")
+    
+    def load_selected_project(self):
+        """Opens the project that is currently selected in the table."""
+        current_row = self.project_table.currentRow()
+        if current_row < 0:
+            QMessageBox.warning(self, "هشدار", "لطفاً ابتدا یک پروژه را از جدول انتخاب کنید.")
+            return
+        project_id_item = self.project_table.item(current_row, 0)
+        if not project_id_item:
+            return
+        project_id = int(project_id_item.text())
+        self.load_project_by_id(project_id)
+    
+    def new_project(self):
+        """Clears the details form and prepares for a new project."""
+        # Reset the current project ID
+        self.current_project_id = None
+
+        # Clear basic fields
+        self.inputs['عنوان کتاب'].clear()
+        self.inputs['زیر عنوان کتاب'].clear()
+        # Date will auto‑update when setup_details_tab is called, but we can set again:
+        today_jalali = jdatetime.date.today()
+        self.inputs['تاریخ'].setText(today_jalali.strftime("%Y/%m/%d"))
+        self.inputs['قطع'].setCurrentIndex(0)
+        self.inputs['تیراژ'].setValue(0)
+
+        # Clear dynamic types (set to first item)
+        for key, widget in self.inputs.items():
+            if isinstance(widget, QComboBox) and key != 'قطع':
+                widget.setCurrentIndex(0)
+
+        # Clear costs
+        for spin in self.cost_inputs.values():
+            spin.setValue(0.0)
+
+        self.royalty_input.setValue(0.0)
+
+        # Clear calculation labels
+        self.lbl_final_total.setText("0")
+        self.lbl_single_price.setText("0")
+
+        # Switch to details tab
+        self.tabs.setCurrentIndex(1)
+    
+    def delete_project(self):
+        """Deletes the selected project after password verification."""
+        # 1. Check if a row is selected in the table
+        current_row = self.project_table.currentRow()
+        if current_row < 0:
+            QMessageBox.warning(self, "هشدار", "لطفاً ابتدا یک پروژه را از جدول انتخاب کنید.")
+            return
+
+        project_id_item = self.project_table.item(current_row, 0)
+        if not project_id_item:
+            return
+        project_id = int(project_id_item.text())
+        project_title = self.project_table.item(current_row, 1).text()
+
+        # 2. Ask for password
+        password, ok = QInputDialog.getText(
+            self, "تأیید حذف",
+            f"برای حذف پروژه «{project_title}» لطفاً رمز عبور را وارد کنید:",
+            QLineEdit.Password
+        )
+        if not ok or password != DELETE_PASSWORD:
+            QMessageBox.critical(self, "خطا", "رمز عبور اشتباه است یا عملیات لغو شد.")
+            return
+
+        # 3. Confirm deletion
+        reply = QMessageBox.question(
+            self, "تأیید نهایی",
+            f"آیا از حذف کامل پروژه «{project_title}» اطمینان دارید؟",
+            QMessageBox.Yes | QMessageBox.No
+        )
+        if reply != QMessageBox.Yes:
+            return
+
+        # 4. Delete from database
+        try:
+            # Delete details first (if no ON DELETE CASCADE)
+            self.cursor.execute("DELETE FROM project_details WHERE project_id = %s", (project_id,))
+            # Delete main project
+            self.cursor.execute("DELETE FROM projects WHERE id = %s", (project_id,))
+            self.db_conn.commit()
+
+            # 5. Refresh the project table
+            self.load_projects()
+
+            # 6. If the deleted project is currently loaded, clear the form
+            if hasattr(self, 'current_project_id') and self.current_project_id == project_id:
+                self.new_project()  # use the method we already created to reset fields
+
+            QMessageBox.information(self, "موفقیت", "پروژه با موفقیت حذف شد.")
+
+        except mysql.connector.Error as err:
+            self.db_conn.rollback()
+            QMessageBox.critical(self, "خطا", f"حذف پروژه با مشکل مواجه شد:\n{err}")
             
 if __name__ == "__main__":
     app = QApplication(sys.argv)
