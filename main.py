@@ -159,8 +159,11 @@ class BookCostCalculator(QMainWindow):
     def setup_details_tab(self):
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
+        
+        scroll_area.setLayoutDirection(Qt.LeftToRight)
 
         scroll_content = QWidget()
+        scroll_content.setLayoutDirection(Qt.RightToLeft)
         scroll_layout = QVBoxLayout(scroll_content)
 
         form_layout = QFormLayout()
@@ -828,6 +831,8 @@ if __name__ == "__main__":
     app.setStyleSheet("""
         QWidget { font-family: 'Tahoma', 'IRANSans', sans-serif; font-size: 14px; }
         QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox { padding: 5px; }
+        QComboBox { text-align: center; }
+        QComboBox QAbstractItemView { text-align: center; }
     """)
 
     window = BookCostCalculator()
