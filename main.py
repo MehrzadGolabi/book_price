@@ -162,6 +162,7 @@ class BookCostCalculator(QMainWindow):
         self.search_input.setPlaceholderText("جستجوی نام کتاب...")
         search_btn = QPushButton("جستجو")
         search_btn.clicked.connect(self.search_projects)           # ← connect search
+        self.search_input.returnPressed.connect(self.search_projects) # Palette: Search on Enter
         
         search_layout.addWidget(self.search_input)
         search_layout.addWidget(search_btn)
@@ -201,7 +202,9 @@ class BookCostCalculator(QMainWindow):
 
         # Basic Info
         self.inputs['عنوان کتاب'] = QLineEdit()
+        self.inputs['عنوان کتاب'].setPlaceholderText("مثال: تاریخ طبری")
         self.inputs['زیر عنوان کتاب'] = QLineEdit()
+        self.inputs['زیر عنوان کتاب'].setPlaceholderText("(اختیاری)")
         
         # Auto-generating Date (Persian/Jalali)
         self.inputs['تاریخ'] = QLineEdit()
