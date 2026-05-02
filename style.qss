@@ -6,6 +6,10 @@ QMainWindow {
     background-color: #f8fafc;
 }
 
+QScrollArea QWidget {
+    background-color: #f8fafc;
+}
+
 /* Toolbar */
 QToolBar {
     background: #1e293b;
@@ -257,3 +261,4 @@ QGroupBox::title {
     padding: 0 5px;
     color: #2563eb;
 }
+QWidget#scroll_content { background-color: #f8fafc; }

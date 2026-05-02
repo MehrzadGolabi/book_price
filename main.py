@@ -192,6 +192,7 @@ class BookCostCalculator(QMainWindow):
         scroll_area.setLayoutDirection(Qt.LeftToRight)
 
         scroll_content = QWidget()
+        scroll_content.setObjectName("scroll_content")
         scroll_content.setLayoutDirection(Qt.RightToLeft)
         scroll_layout = QVBoxLayout(scroll_content)
 
