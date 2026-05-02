@@ -226,11 +226,15 @@ class BookCostCalculator(QMainWindow):
             spin = QDoubleSpinBox()
             spin.setMaximum(9999999999.99) # Handle large currency values
             spin.setGroupSeparatorShown(True) # Adds commas to large numbers
+            spin.setDecimals(0)
+            spin.lineEdit().setAlignment(Qt.AlignCenter) 
             self.cost_inputs[ctype] = spin
             
         self.royalty_input = QDoubleSpinBox()
         self.royalty_input.setSuffix(" %")
         self.royalty_input.setMaximum(100.0)
+        self.royalty_input.setDecimals(0)
+        self.royalty_input.lineEdit().setAlignment(Qt.AlignCenter)
 
         # Add to form layout
         form_layout.addRow("عنوان کتاب:", self.inputs['عنوان کتاب'])
@@ -861,6 +865,8 @@ class BookCostCalculator(QMainWindow):
         self.def_cost_spin = QDoubleSpinBox()
         self.def_cost_spin.setMaximum(9999999999.99)
         self.def_cost_spin.setGroupSeparatorShown(True)
+        self.def_cost_spin.setDecimals(0)
+        self.def_cost_spin.lineEdit().setAlignment(Qt.AlignCenter)
         form.addRow("قیمت پیش‌فرض:", self.def_cost_spin)
 
         btn_layout = QHBoxLayout()
@@ -1094,8 +1100,7 @@ if __name__ == "__main__":
     app.setStyleSheet("""
         QWidget { font-family: 'Tahoma', 'IRANSans', sans-serif; font-size: 14px; }
         QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox { padding: 5px; }
-        QComboBox { text-align: center; }
-        QComboBox QAbstractItemView { text-align: center; }
+        QSpinBox, QDoubleSpinBox { text-align: center; }
     """)
 
     window = BookCostCalculator()
