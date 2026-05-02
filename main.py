@@ -1454,24 +1454,42 @@ class BookCostCalculator(QMainWindow):
         }
 
         updated_count = 0
+
+        # ⚡ Bolt Optimization: Batch queries to avoid N+1 problem inside loop
+        # Instead of 8 individual SELECT queries, we collect requirements and
+        # run a single database call, improving UI responsiveness.
+        query_conditions = []
+        query_params = []
+        requested_items = [] # Keep track to verify what we asked for
+
         for category, widget_key in category_map.items():
             widget = self.inputs[widget_key]
             selected_text = widget.currentText().strip()
             if not selected_text:
                 continue
+
+            query_conditions.append("(category_name = %s AND item_value = %s)")
+            query_params.extend([category, selected_text])
+            requested_items.append((category, selected_text))
+
+        if query_conditions:
             try:
-                self.cursor.execute(
-                    "SELECT target_cost_field, default_cost FROM default_cost_mappings "
-                    "WHERE category_name = %s AND item_value = %s",
-                    (category, selected_text)
-                )
-                mapping = self.cursor.fetchone()
-                if mapping:
+                query = f"""
+                    SELECT category_name, item_value, target_cost_field, default_cost
+                    FROM default_cost_mappings
+                    WHERE {' OR '.join(query_conditions)}
+                """
+                self.cursor.execute(query, tuple(query_params))
+                mappings = self.cursor.fetchall()
+
+                # Apply results
+                for mapping in mappings:
                     cost_field = mapping['target_cost_field']
                     cost_value = mapping['default_cost']
                     if cost_field in self.cost_inputs:
                         self.cost_inputs[cost_field].setValue(cost_value)
                         updated_count += 1
+
             except mysql.connector.Error as err:
                 print("Error importing default:", err)
 
