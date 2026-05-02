@@ -11,6 +11,7 @@ from PySide6.QtGui import QAction
 import mysql.connector
 # Matplotlib imports
 import matplotlib
+from numpy import dtype
 matplotlib.use('QtAgg')
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
@@ -103,6 +104,10 @@ class BookCostCalculator(QMainWindow):
         delete_action.triggered.connect(self.delete_project)
         toolbar.addAction(delete_action)
         
+        import_defaults_action = QAction("دریافت قیمت‌های پایه", self)
+        import_defaults_action.triggered.connect(self.import_default_prices)
+        toolbar.addAction(import_defaults_action)
+        
         toolbar.addAction(save_action)
         toolbar.addAction(exit_action)
 
@@ -115,16 +120,19 @@ class BookCostCalculator(QMainWindow):
         self.tab_details = QWidget()
         self.tab_calc = QWidget()
         self.tab_report = QWidget()
+        self.tab_defaults = QWidget()
 
         self.tabs.addTab(self.tab_project, "مدیریت پروژه‌ها")
         self.tabs.addTab(self.tab_details, "ورود اطلاعات و هزینه‌ها")
         self.tabs.addTab(self.tab_calc, "محاسبات نهایی")
         self.tabs.addTab(self.tab_report, "گزارش‌گیری (PDF)")
+        self.tabs.addTab(self.tab_defaults, "مدیریت قیمت‌های پایه")
 
         self.setup_project_tab()
         self.setup_details_tab()
         self.setup_calc_tab()
         self.setup_report_tab()
+        self.setup_default_costs_tab()
 
     def setup_project_tab(self):
         layout = QVBoxLayout()
@@ -233,7 +241,7 @@ class BookCostCalculator(QMainWindow):
             if k not in ['عنوان کتاب', 'تاریخ', 'تیراژ'] and isinstance(v, QComboBox):
                 form_layout.addRow(k + ":", v)
                 
-        form_layout.addRow("---", QLabel("--- هزینه‌ها (تومان/ریال) ---"))
+        form_layout.addRow("---", QLabel("--- هزینه‌ها (تومان) ---"))
         for k, v in self.cost_inputs.items():
             form_layout.addRow(k + ":", v)
             
@@ -755,7 +763,7 @@ class BookCostCalculator(QMainWindow):
         # Clear dynamic types (set to first item)
         for key, widget in self.inputs.items():
             if isinstance(widget, QComboBox) and key != 'قطع':
-                widget.setCurrentIndex(0)
+                widget.setCurrentIndex(-1)
 
         # Clear costs
         for spin in self.cost_inputs.values():
@@ -823,6 +831,261 @@ class BookCostCalculator(QMainWindow):
         except mysql.connector.Error as err:
             self.db_conn.rollback()
             QMessageBox.critical(self, "خطا", f"حذف پروژه با مشکل مواجه شد:\n{err}")
+            
+    def setup_default_costs_tab(self):
+        layout = QVBoxLayout()
+
+        # Form to add / edit a mapping
+        form = QFormLayout()
+
+        self.def_cat_combo = QComboBox()
+        self.def_cat_combo.setEditable(False)
+        self.def_cat_combo.addItems([
+            "نوع کاغذ متن", "نوع چاپ متن", "نوع رنگ متن", "نوع زینک متن",
+            "نوع کاغذ جلد", "نوع چاپ جلد", "نوع رنگ جلد", "نوع زینک جلد"
+        ])
+        form.addRow("دسته‌بندی:", self.def_cat_combo)
+
+        self.def_value_combo = QComboBox()
+        self.def_value_combo.setEditable(True)   # allow entering new values
+        self.def_value_combo.setInsertPolicy(QComboBox.InsertAtBottom)
+        # Populate with existing items when category changes
+        self.def_value_combo.currentTextChanged.connect(lambda text, cat=self.def_cat_combo.currentText(): self.apply_default_cost(cat, text))
+        form.addRow("مقدار (نوع):", self.def_value_combo)
+
+        self.def_cost_field_combo = QComboBox()
+        # all cost field keys
+        self.def_cost_field_combo.addItems(list(self.cost_inputs.keys()))
+        form.addRow("فیلد هزینه هدف:", self.def_cost_field_combo)
+
+        self.def_cost_spin = QDoubleSpinBox()
+        self.def_cost_spin.setMaximum(9999999999.99)
+        self.def_cost_spin.setGroupSeparatorShown(True)
+        form.addRow("قیمت پیش‌فرض:", self.def_cost_spin)
+
+        btn_layout = QHBoxLayout()
+        add_btn = QPushButton("افزودن")
+        add_btn.clicked.connect(self.add_default_cost_mapping)
+        edit_btn = QPushButton("ویرایش")
+        edit_btn.clicked.connect(self.edit_default_cost_mapping)
+        delete_btn = QPushButton("حذف")
+        delete_btn.clicked.connect(self.delete_default_cost_mapping)
+        btn_layout.addWidget(add_btn)
+        btn_layout.addWidget(edit_btn)
+        btn_layout.addWidget(delete_btn)
+
+        layout.addLayout(form)
+        layout.addLayout(btn_layout)
+
+        # Table showing all mappings
+        self.defaults_table = QTableWidget(0, 4)
+        self.defaults_table.setHorizontalHeaderLabels(["دسته‌بندی", "مقدار", "فیلد هزینه", "قیمت پیش‌فرض"])
+        self.defaults_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.defaults_table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.defaults_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.defaults_table.doubleClicked.connect(self.load_selected_default_for_edit)
+        layout.addWidget(self.defaults_table)
+
+        self.tab_defaults.setLayout(layout)
+
+        # Initial load
+        self.populate_default_value_combo(self.def_cat_combo.currentText())
+        self.load_default_costs_table()
+
+    def populate_default_value_combo(self, category_name):
+        """Fills the value combo with existing items from the chosen category."""
+        self.def_value_combo.clear()
+        if not self.db_conn:
+            return
+        try:
+            self.cursor.execute(
+                "SELECT item_value FROM categories WHERE category_name = %s", (category_name,)
+            )
+            for row in self.cursor.fetchall():
+                self.def_value_combo.addItem(row['item_value'])
+        except Exception as e:
+            print("Error populating value combo:", e)
+
+    def load_default_costs_table(self):
+        """Reloads the table showing all default cost mappings."""
+        try:
+            self.cursor.execute(
+                "SELECT id, category_name, item_value, target_cost_field, default_cost "
+                "FROM default_cost_mappings ORDER BY category_name, item_value"
+            )
+            rows = self.cursor.fetchall()
+            self.defaults_table.setRowCount(0)
+            for i, row in enumerate(rows):
+                self.defaults_table.insertRow(i)
+                self.defaults_table.setItem(i, 0, QTableWidgetItem(row['category_name']))
+                self.defaults_table.setItem(i, 1, QTableWidgetItem(row['item_value']))
+                self.defaults_table.setItem(i, 2, QTableWidgetItem(row['target_cost_field']))
+                cost_item = QTableWidgetItem(f"{row['default_cost']:,.2f}")
+                cost_item.setTextAlignment(Qt.AlignCenter)
+                self.defaults_table.setItem(i, 3, cost_item)
+                # Store the id in the first cell's data for later use
+                self.defaults_table.item(i, 0).setData(Qt.UserRole, row['id'])
+        except mysql.connector.Error as err:
+            QMessageBox.warning(self, "خطا", f"بارگذاری قیمت‌های پایه با خطا مواجه شد:\n{err}")
+
+    def add_default_cost_mapping(self):
+        """Inserts a new mapping into the database."""
+        cat = self.def_cat_combo.currentText()
+        val = self.def_value_combo.currentText().strip()
+        if not val:
+            QMessageBox.warning(self, "خطا", "مقدار نوع نمی‌تواند خالی باشد.")
+            return
+        cost_field = self.def_cost_field_combo.currentText()
+        cost = self.def_cost_spin.value()
+        try:
+            self.cursor.execute(
+                "INSERT INTO default_cost_mappings (category_name, item_value, target_cost_field, default_cost) "
+                "VALUES (%s, %s, %s, %s)",
+                (cat, val, cost_field, cost)
+            )
+            self.db_conn.commit()
+            self.load_default_costs_table()
+            # also add the new item_value to the categories table if not present
+            self.cursor.execute(
+                "INSERT IGNORE INTO categories (category_name, item_value) VALUES (%s, %s)",
+                (cat, val)
+            )
+            self.db_conn.commit()
+            # refresh the value combo
+            self.populate_default_value_combo(cat)
+        except mysql.connector.Error as err:
+            QMessageBox.critical(self, "خطا", f"افزودن قیمت پایه با خطا مواجه شد:\n{err}")
+
+    def load_selected_default_for_edit(self):
+        """When a table row is double‑clicked, fill the form above for editing."""
+        row = self.defaults_table.currentRow()
+        if row < 0:
+            return
+        id_item = self.defaults_table.item(row, 0)
+        mapping_id = id_item.data(Qt.UserRole)
+        cat = self.defaults_table.item(row, 0).text()
+        val = self.defaults_table.item(row, 1).text()
+        field = self.defaults_table.item(row, 2).text()
+        cost_text = self.defaults_table.item(row, 3).text().replace(',', '')
+        try:
+            cost = float(cost_text)
+        except ValueError:
+            cost = 0.0
+
+        self.def_cat_combo.setCurrentText(cat)
+        self.def_value_combo.setCurrentText(val)
+        self.def_cost_field_combo.setCurrentText(field)
+        self.def_cost_spin.setValue(cost)
+        # Store the editing id temporary
+        self.editing_default_id = mapping_id
+
+    def edit_default_cost_mapping(self):
+        """Updates the mapping currently loaded in the form."""
+        if not hasattr(self, 'editing_default_id') or self.editing_default_id is None:
+            QMessageBox.warning(self, "خطا", "ابتدا یک ردیف را با دابل کلیک انتخاب کنید.")
+            return
+        cat = self.def_cat_combo.currentText()
+        val = self.def_value_combo.currentText().strip()
+        cost_field = self.def_cost_field_combo.currentText()
+        cost = self.def_cost_spin.value()
+        try:
+            self.cursor.execute(
+                "UPDATE default_cost_mappings SET category_name=%s, item_value=%s, "
+                "target_cost_field=%s, default_cost=%s WHERE id=%s",
+                (cat, val, cost_field, cost, self.editing_default_id)
+            )
+            self.db_conn.commit()
+            self.load_default_costs_table()
+            self.populate_default_value_combo(cat)
+            self.editing_default_id = None
+        except mysql.connector.Error as err:
+            QMessageBox.critical(self, "خطا", f"ویرایش با خطا مواجه شد:\n{err}")
+
+    def delete_default_cost_mapping(self):
+        """Deletes the mapping selected in the table."""
+        row = self.defaults_table.currentRow()
+        if row < 0:
+            QMessageBox.warning(self, "خطا", "لطفاً یک ردیف را انتخاب کنید.")
+            return
+        id_item = self.defaults_table.item(row, 0)
+        mapping_id = id_item.data(Qt.UserRole)
+        reply = QMessageBox.question(self, "تأیید حذف", "آیا از حذف این قیمت پایه اطمینان دارید؟",
+                                    QMessageBox.Yes | QMessageBox.No)
+        if reply != QMessageBox.Yes:
+            return
+        try:
+            self.cursor.execute("DELETE FROM default_cost_mappings WHERE id = %s", (mapping_id,))
+            self.db_conn.commit()
+            self.load_default_costs_table()
+        except mysql.connector.Error as err:
+            QMessageBox.critical(self, "خطا", f"حذف با خطا مواجه شد:\n{err}")
+            
+            
+    def apply_default_cost(self, category_name, selected_text):
+        """Looks up a default cost mapping and fills the target cost field."""
+        if not selected_text or not self.db_conn:
+            return
+        try:
+            self.cursor.execute(
+                "SELECT target_cost_field, default_cost FROM default_cost_mappings "
+                "WHERE category_name = %s AND item_value = %s",
+                (category_name, selected_text)
+            )
+            mapping = self.cursor.fetchone()
+            if mapping:
+                cost_field = mapping['target_cost_field']
+                cost_value = mapping['default_cost']
+                if cost_field in self.cost_inputs:
+                    self.cost_inputs[cost_field].setValue(cost_value)
+        except mysql.connector.Error as err:
+            print("Error applying default cost:", err)
+            
+            
+    def import_default_prices(self):
+        """Loops through all dynamic combos, reads their current text, and fills the associated default cost if a mapping exists."""
+        if not self.db_conn:
+            return
+
+        # Map from Persian category name to widget key
+        category_map = {
+            'نوع کاغذ متن': 'نوع کاغذ متن',
+            'نوع چاپ متن': 'نوع چاپ متن',
+            'نوع رنگ متن': 'نوع رنگ متن',
+            'نوع زینک متن': 'نوع زینک متن',
+            'نوع کاغذ جلد': 'نوع کاغذ جلد',
+            'نوع چاپ جلد': 'نوع چاپ جلد',
+            'نوع رنگ جلد': 'نوع رنگ جلد',
+            'نوع زینک جلد': 'نوع زینک جلد'
+        }
+
+        updated_count = 0
+        for category, widget_key in category_map.items():
+            widget = self.inputs[widget_key]
+            selected_text = widget.currentText().strip()
+            if not selected_text:
+                continue
+            try:
+                self.cursor.execute(
+                    "SELECT target_cost_field, default_cost FROM default_cost_mappings "
+                    "WHERE category_name = %s AND item_value = %s",
+                    (category, selected_text)
+                )
+                mapping = self.cursor.fetchone()
+                if mapping:
+                    cost_field = mapping['target_cost_field']
+                    cost_value = mapping['default_cost']
+                    if cost_field in self.cost_inputs:
+                        self.cost_inputs[cost_field].setValue(cost_value)
+                        updated_count += 1
+            except mysql.connector.Error as err:
+                print("Error importing default:", err)
+
+        if updated_count > 0:
+            QMessageBox.information(self, "موفقیت", f"{updated_count} قیمت پایه‌ای بارگذاری شد.")
+        else:
+            QMessageBox.information(self, "اطلاعات", "هیچ تطابقی یافت نشد.")
+            
+            
             
 if __name__ == "__main__":
     app = QApplication(sys.argv)
