@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QScrollArea, QWidget, 
                                QPushButton, QToolBar, QSpinBox, QDoubleSpinBox, 
                                QLabel, QMessageBox, QHBoxLayout, QTableWidget, QHeaderView, QFileDialog, QCheckBox, QTableWidgetItem, QInputDialog)
 from PySide6.QtCore import Qt, QDate
-from PySide6.QtGui import QAction
+from PySide6.QtGui import QAction, QFontDatabase, QShortcut, QKeySequence
 import mysql.connector
 # Matplotlib imports
 import matplotlib
@@ -297,6 +297,9 @@ class BookCostCalculator(QMainWindow):
         
         # Switch to calculation tab
         self.tabs.setCurrentIndex(2)
+        
+        #save the project to the database
+        self.save_project_to_db()
 
     def save_new_dynamic_types(self):
         # Checks all ComboBoxes. If text isn't in the list, save it to DB.
@@ -1096,12 +1099,18 @@ class BookCostCalculator(QMainWindow):
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     
-    # Optional: Apply a clean stylesheet
-    app.setStyleSheet("""
-        QWidget { font-family: 'Tahoma', 'IRANSans', sans-serif; font-size: 14px; }
-        QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox { padding: 5px; }
-        QSpinBox, QDoubleSpinBox { text-align: center; }
-    """)
+    app.setStyle("Fusion")
+    
+    style_path = os.path.join(os.path.dirname(__file__), "style.qss")
+    if os.path.exists(style_path):
+        with open(style_path, "r", encoding="utf-8") as f:
+            app.setStyleSheet(f.read())
+    else:
+        app.setStyleSheet("""
+            QWidget { font-family: 'Tahoma', 'IRANSans', sans-serif; font-size: 14px; }
+            QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox { padding: 5px; }
+            QSpinBox, QDoubleSpinBox { text-align: center; }
+        """)
 
     window = BookCostCalculator()
     window.show()

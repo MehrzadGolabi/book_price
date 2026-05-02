@@ -1,0 +1,160 @@
+/* ============================================================
+   Clean, high-contrast – no font overrides (Tahoma loaded in code)
+   ============================================================ */
+
+QMainWindow {
+    background-color: #f5f6fa;
+}
+
+/* Toolbar */
+QToolBar {
+    background: #2c3e50;
+    border-bottom: 2px solid #1a252f;
+    padding: 6px;
+}
+QToolBar QToolButton {
+    background: rgba(255,255,255,0.12);
+    border-radius: 6px;
+    padding: 6px 14px;
+    color: #ffffff;
+    font-weight: bold;
+}
+QToolBar QToolButton:hover {
+    background: rgba(255,255,255,0.25);
+}
+
+/* Tabs */
+QTabWidget::pane {
+    background: #ffffff;
+    border: 1px solid #b0b9c5;
+    border-radius: 6px;
+}
+QTabBar::tab {
+    background: #e4e9f0;
+    padding: 8px 20px;
+    margin-right: 2px;
+    border-top-left-radius: 6px;
+    border-top-right-radius: 6px;
+    font-weight: bold;
+    color: #2c3e50;
+}
+QTabBar::tab:selected {
+    background: #ffffff;
+    border-bottom: 3px solid #1e6eb8;
+    color: #0d2c45;
+}
+QTabBar::tab:hover:!selected {
+    background: #d3dbe6;
+}
+
+/* Buttons */
+QPushButton {
+    background: #1e6eb8;
+    color: #ffffff;
+    border: none;
+    border-radius: 6px;
+    padding: 10px 20px;
+    font-weight: bold;
+}
+QPushButton:hover {
+    background: #2580d5;
+}
+QPushButton:pressed {
+    background: #155a8a;
+}
+
+/* Labels – the key fix: explicitly black and opaque */
+QLabel {
+    color: #ffffff;
+    background: transparent;
+}
+
+/* Input fields */
+QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox {
+    color: #000000;
+    background: #ffffff;
+    border: 1px solid #a6b3c2;
+    border-radius: 5px;
+    padding: 6px 10px;
+    selection-background-color: #1e6eb8;
+    selection-color: #ffffff;
+}
+QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus {
+    border-color: #1e6eb8;
+}
+
+/* Combo box */
+QComboBox::drop-down {
+    subcontrol-origin: padding;
+    subcontrol-position: top right;
+    width: 22px;
+    border-left: 1px solid #a6b3c2;
+    border-top-right-radius: 5px;
+    border-bottom-right-radius: 5px;
+    background: #e3e9f0;
+}
+QComboBox QAbstractItemView {
+    border: 1px solid #a6b3c2;
+    background: #ffffff;
+    color: #000000;
+    selection-background-color: #1e6eb8;
+    selection-color: #ffffff;
+}
+
+/* Spinbox buttons */
+QSpinBox::up-button, QDoubleSpinBox::up-button,
+QSpinBox::down-button, QDoubleSpinBox::down-button {
+    background: #e3e9f0;
+    border-radius: 3px;
+}
+
+/* Tables */
+QTableWidget {
+    background: #ffffff;
+    color: #000000;
+    gridline-color: #d0d7e0;
+    border: 1px solid #a6b3c2;
+    border-radius: 5px;
+}
+QHeaderView::section {
+    background: #2c3e50;
+    color: #ffffff;
+    padding: 6px;
+    font-weight: bold;
+}
+
+/* Checkboxes */
+QCheckBox {
+    color: #000000;
+    spacing: 8px;
+}
+QCheckBox::indicator {
+    width: 18px;
+    height: 18px;
+    border-radius: 3px;
+    border: 2px solid #1e6eb8;
+}
+QCheckBox::indicator:checked {
+    background: #1e6eb8;
+}
+
+/* Scroll bar */
+QScrollBar:vertical {
+    background: #f1f3f6;
+    width: 14px;
+    border-radius: 7px;
+}
+QScrollBar::handle:vertical {
+    background: #1e6eb8;
+    border-radius: 7px;
+    min-height: 35px;
+}
+
+/* Message boxes */
+QMessageBox {
+    background: #ffffff;
+    color: #000000;
+}
+QMessageBox QLabel {
+    color: #000000;
+}
