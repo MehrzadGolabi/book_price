@@ -192,6 +192,7 @@ class BookCostCalculator(QMainWindow):
         scroll_area.setLayoutDirection(Qt.LeftToRight)
 
         scroll_content = QWidget()
+        scroll_content.setObjectName("scroll_content")
         scroll_content.setLayoutDirection(Qt.RightToLeft)
         scroll_layout = QVBoxLayout(scroll_content)
 
@@ -202,7 +203,7 @@ class BookCostCalculator(QMainWindow):
 
         # Basic Info
         self.inputs['عنوان کتاب'] = QLineEdit()
-        self.inputs['عنوان کتاب'].setPlaceholderText("مثال: تاریخ طبری")
+        self.inputs['عنوان کتاب'].setPlaceholderText("عنوان کتاب را وارد کنید")
         self.inputs['زیر عنوان کتاب'] = QLineEdit()
         self.inputs['زیر عنوان کتاب'].setPlaceholderText("(اختیاری)")
         
@@ -562,101 +563,165 @@ class BookCostCalculator(QMainWindow):
             layout.addStretch() # هل دادن عناصر به سمت بالا
             self.tab_report.setLayout(layout)
             
-    def write_farsi_text_right_aligned(self, canvas_obj, text, y_pos, font_size=12):
-        """تابع کمکی برای نوشتن متن راست‌چین فارسی در PDF"""
-        reshaped = arabic_reshaper.reshape(text)
-        bidi_text = get_display(reshaped)
-        canvas_obj.setFont('FarsiFont', font_size)
-        # قرار دادن متن در سمت راست صفحه A4
-        canvas_obj.drawRightString(A4[0] - 2*cm, y_pos, bidi_text)
-        
+
+    def write_farsi_text(self, canvas_obj, text, x_pos, y_pos, font_size=12, align='right', color=(0,0,0)):
+            """Helper for advanced Farsi text alignment and coloring in PDF."""
+            reshaped = arabic_reshaper.reshape(text)
+            bidi_text = get_display(reshaped)
+            canvas_obj.setFont('FarsiFont', font_size)
+            canvas_obj.setFillColorRGB(*color)
+            if align == 'right':
+                canvas_obj.drawRightString(x_pos, y_pos, bidi_text)
+            elif align == 'center':
+                canvas_obj.drawCentredString(x_pos, y_pos, bidi_text)
+            else:
+                canvas_obj.drawString(x_pos, y_pos, bidi_text)
+
     def generate_pdf(self):
-        # بررسی وجود فایل فونت
         font_path = "tahoma.ttf"
         if not os.path.exists(font_path):
             QMessageBox.critical(self, "خطا", f"فایل فونت '{font_path}' در کنار برنامه پیدا نشد!\nلطفاً یک فونت فارسی را در پوشه برنامه قرار دهید.")
             return
 
-        # دریافت مسیر ذخیره فایل از کاربر
         file_path, _ = QFileDialog.getSaveFileName(self, "ذخیره گزارش PDF", "", "PDF Files (*.pdf)")
         if not file_path:
-            return # کاربر کنسل کرده است
+            return
 
-        # ثبت فونت
         pdfmetrics.registerFont(TTFont('FarsiFont', font_path))
-        
         c = canvas.Canvas(file_path, pagesize=A4)
         width, height = A4
-        y = height - 2 * cm
+        margin = 2 * cm
+        y = height - margin
+
+        def check_page_break(current_y, needed_space=2*cm):
+            """Creates a new page if the required space isn't available."""
+            if current_y < margin + needed_space:
+                c.showPage()
+                return height - margin
+            return current_y
+
+        # ==========================================
+        # 1. HEADER (Logo, Title, Date)
+        # ==========================================
         
-        # تیتر اصلی
-        title = f"گزارش برآورد هزینه چاپ کتاب: {self.inputs['عنوان کتاب'].text()}"
-        self.write_farsi_text_right_aligned(c, title, y, font_size=18)
-        y -= 1.5 * cm
+        # Logo placeholder (Top Left)
+        logo_path = "logo.png" # Place a logo.png in the same folder to use it
+        if os.path.exists(logo_path):
+            c.drawImage(logo_path, margin, y - 2*cm, width=3*cm, height=3*cm, preserveAspectRatio=True)
+        else:
+            # Draw a dotted placeholder box if no logo is found
+            c.setDash(3, 3)
+            c.setStrokeColorRGB(0.5, 0.5, 0.5)
+            c.rect(margin, y - 2*cm, 3*cm, 2.5*cm)
+            self.write_farsi_text(c, "محل لوگوی ناشر", margin + 1.5*cm, y - 0.9*cm, font_size=10, align='center', color=(0.5, 0.5, 0.5))
+            c.setDash() # Reset dash
+
+        # Title (Top Right)
+        self.write_farsi_text(c, "گزارش برآورد هزینه چاپ کتاب", width - margin, y - 0.5*cm, font_size=18, color=(0.1, 0.2, 0.4))
+        self.write_farsi_text(c, self.inputs['عنوان کتاب'].text(), width - margin, y - 1.5*cm, font_size=14)
+
+        # Date
+        today = jdatetime.date.today().strftime("%Y/%m/%d")
+        self.write_farsi_text(c, f"تاریخ گزارش: {today}", width - margin, y - 2.3*cm, font_size=10, color=(0.4, 0.4, 0.4))
+
+        y -= 3.5 * cm
+
+        # ==========================================
+        # STRUCTURAL HELPERS
+        # ==========================================
         
-        # 1. چاپ اطلاعات اصلی
+        def draw_section_header(title, current_y):
+            current_y = check_page_break(current_y, 3*cm)
+            c.setFillColorRGB(0.92, 0.94, 0.96) # Light blue-gray background for header
+            c.rect(margin, current_y - 0.3*cm, width - 2*margin, 0.8*cm, fill=1, stroke=0)
+            self.write_farsi_text(c, title, width - margin - 0.2*cm, current_y, font_size=12, color=(0.1, 0.2, 0.4))
+            return current_y - 1 * cm
+
+        def draw_row(key, value, current_y):
+            current_y = check_page_break(current_y, 1*cm)
+            
+            # Dotted leader line between text
+            c.setStrokeColorRGB(0.8, 0.8, 0.8)
+            c.setDash(1, 4)
+            c.line(margin + 4*cm, current_y + 0.1*cm, width - margin - 4*cm, current_y + 0.1*cm)
+            c.setDash()
+
+            # Key on Right, Value on Left
+            self.write_farsi_text(c, key, width - margin, current_y, font_size=11)
+            self.write_farsi_text(c, str(value), margin, current_y, font_size=11, align='left')
+            return current_y - 0.8 * cm
+
+        # ==========================================
+        # 2. SECTIONS
+        # ==========================================
+        
+        # Basic Info
         if self.chk_basic_info.isChecked():
-            c.setLineWidth(1)
-            c.line(2*cm, y, width - 2*cm, y)
-            y -= 1 * cm
-            self.write_farsi_text_right_aligned(c, "--- اطلاعات پایه ---", y, font_size=14)
-            y -= 1 * cm
+            y = draw_section_header("اطلاعات پایه", y)
             for key in ['عنوان کتاب', 'زیر عنوان کتاب', 'تاریخ', 'قطع']:
                 widget = self.inputs[key]
                 val = widget.currentText() if isinstance(widget, QComboBox) else widget.text()
                 if val:
-                    self.write_farsi_text_right_aligned(c, f"{key}: {val}", y)
-                    y -= 0.8 * cm
-            
-            # تیراژ
-            self.write_farsi_text_right_aligned(c, f"تیراژ: {self.inputs['تیراژ'].value()}", y)
-            y -= 1.2 * cm
+                    y = draw_row(key, val, y)
+            y = draw_row("تیراژ", str(self.inputs['تیراژ'].value()), y)
+            y -= 0.5 * cm
 
-        # 2. چاپ ویژگی‌های فنی
+        # Technical Features
         if self.chk_features.isChecked():
-            c.line(2*cm, y, width - 2*cm, y)
-            y -= 1 * cm
-            self.write_farsi_text_right_aligned(c, "--- ویژگی‌های فنی ---", y, font_size=14)
-            y -= 1 * cm
+            y = draw_section_header("ویژگی‌های فنی", y)
             for key, widget in self.inputs.items():
                 if isinstance(widget, QComboBox) and key != 'قطع':
                     val = widget.currentText()
                     if val:
-                        self.write_farsi_text_right_aligned(c, f"{key}: {val}", y)
-                        y -= 0.8 * cm
-                        if y < 3*cm: # ایجاد صفحه جدید در صورت پر شدن
-                            c.showPage()
-                            y = height - 2*cm
+                        y = draw_row(key, val, y)
             y -= 0.5 * cm
 
-        # 3. چاپ ریز هزینه‌ها
+        # Costs
         if self.chk_costs.isChecked():
-            c.line(2*cm, y, width - 2*cm, y)
-            y -= 1 * cm
-            self.write_farsi_text_right_aligned(c, "--- ریز هزینه‌ها (تومان) ---", y, font_size=14)
-            y -= 1 * cm
-            
+            y = draw_section_header("ریز هزینه‌ها (تومان)", y)
             for key, spin in self.cost_inputs.items():
                 if spin.value() > 0:
-                    self.write_farsi_text_right_aligned(c, f"{key}: {spin.value():,.0f}", y)
-                    y -= 0.8 * cm
-                    if y < 3*cm:
-                        c.showPage()
-                        y = height - 2*cm
-                        
+                    y = draw_row(key, f"{spin.value():,.0f}", y)
+            
+            y = draw_row("حق تالیف", f"{self.royalty_input.value()} %", y)
             y -= 0.5 * cm
-            self.write_farsi_text_right_aligned(c, f"حق تالیف: {self.royalty_input.value()} %", y)
-            y -= 1.5 * cm
 
-        # نتایج نهایی در انتهای فایل
-        c.line(2*cm, y, width - 2*cm, y)
+        # ==========================================
+        # 3. TOTALS
+        # ==========================================
+        y = check_page_break(y, 4*cm)
+        c.setStrokeColorRGB(0.1, 0.2, 0.4)
+        c.setLineWidth(2)
+        c.line(margin, y, width - margin, y)
         y -= 1 * cm
-        self.write_farsi_text_right_aligned(c, f"جمع کل هزینه‌ها: {self.lbl_final_total.text()} تومان", y, font_size=16)
+
+        self.write_farsi_text(c, "جمع کل هزینه‌ها:", width - margin, y, font_size=14, color=(0.6, 0.1, 0.1))
+        self.write_farsi_text(c, f"{self.lbl_final_total.text()} تومان", margin, y, font_size=14, align='left', color=(0.6, 0.1, 0.1))
         y -= 1 * cm
-        self.write_farsi_text_right_aligned(c, f"هزینه تمام شده هر جلد: {self.lbl_single_price.text()} تومان", y, font_size=16)
+
+        self.write_farsi_text(c, "هزینه تمام شده هر جلد:", width - margin, y, font_size=14, color=(0.1, 0.5, 0.1))
+        self.write_farsi_text(c, f"{self.lbl_single_price.text()} تومان", margin, y, font_size=14, align='left', color=(0.1, 0.5, 0.1))
+
+        # ==========================================
+        # 4. SIGNATURE BLOCKS
+        # ==========================================
+        y -= 2 * cm
+        y = check_page_break(y, 4*cm) # Guarantee space for signatures at the bottom
+
+        c.setLineWidth(1)
+        c.setStrokeColorRGB(0, 0, 0)
+        
+        # Right Signature (Publisher)
+        c.line(width - margin - 5*cm, y, width - margin, y)
+        self.write_farsi_text(c, "مهر و امضای ناشر", width - margin - 2.5*cm, y - 0.7*cm, font_size=11, align='center')
+
+        # Left Signature (Client/Author)
+        c.line(margin, y, margin + 5*cm, y)
+        self.write_farsi_text(c, "امضای نویسنده / سفارش‌دهنده", margin + 2.5*cm, y - 0.7*cm, font_size=11, align='center')
 
         c.save()
         QMessageBox.information(self, "موفقیت", "فایل PDF با موفقیت تولید و ذخیره شد.")
+
 
     def load_projects(self, filter_text=None):
         try:

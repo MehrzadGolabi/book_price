@@ -6,6 +6,11 @@ QMainWindow {
     background-color: #f8fafc;
 }
 
+QScrollArea {
+    background-color: #f8fafc;
+    border: none;
+}
+
 /* Toolbar */
 QToolBar {
     background: #1e293b;
@@ -70,8 +75,8 @@ QPushButton:pressed {
     background: #1e40af;
 }
 QPushButton:disabled {
-    background: #94a3b8;
-    color: #f1f5f9;
+    background: #2563eb;
+    color: #2563eb;
 }
 
 /* Labels */
@@ -257,3 +262,4 @@ QGroupBox::title {
     padding: 0 5px;
     color: #2563eb;
 }
+QWidget#scroll_content { background-color: #f8fafc; }
