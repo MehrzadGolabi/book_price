@@ -204,11 +204,22 @@ class BookCostCalculator(QMainWindow):
         dynamic_types = ["نوع کاغذ متن", "نوع چاپ متن", "نوع رنگ متن", "نوع زینک متن", 
                          "نوع کاغذ جلد", "نوع چاپ جلد", "نوع رنگ جلد", "نوع زینک جلد"]
         
+        # Pre-fetch all categories from db to avoid N+1 queries
+        category_items = {dtype: [] for dtype in dynamic_types}
+        if self.db_conn:
+            try:
+                self.cursor.execute("SELECT category_name, item_value FROM categories")
+                for row in self.cursor.fetchall():
+                    if row['category_name'] in category_items:
+                        category_items[row['category_name']].append(row['item_value'])
+            except Exception as e:
+                print("Error pre-fetching categories:", e)
+
         for dtype in dynamic_types:
             combo = QComboBox()
             combo.setEditable(True) # Allows user to type new values!
             combo.setInsertPolicy(QComboBox.InsertAtBottom)
-            self.populate_combo_from_db(combo, dtype)
+            combo.addItems(category_items[dtype])
             self.inputs[dtype] = combo
 
         # Costs (هزینه)
@@ -260,14 +271,6 @@ class BookCostCalculator(QMainWindow):
         main_layout = QVBoxLayout(self.tab_details)
         main_layout.addWidget(scroll_area)
 
-
-    def populate_combo_from_db(self, combo_widget, category_name):
-        # Fetch previously saved types for this specific category
-        if self.db_conn:
-            self.cursor.execute("SELECT item_value FROM categories WHERE category_name = %s", (category_name,))
-            results = self.cursor.fetchall()
-            for row in results:
-                combo_widget.addItem(row['item_value'])
 
     def perform_calculations(self):
         # 1. Sum all costs
@@ -643,13 +646,14 @@ class BookCostCalculator(QMainWindow):
             
             results = self.cursor.fetchall()
             
-            self.project_table.setRowCount(0)  # clear previous rows
+            self.project_table.setUpdatesEnabled(False)
+            self.project_table.setRowCount(len(results))
             for row_idx, row_data in enumerate(results):
-                self.project_table.insertRow(row_idx)
                 self.project_table.setItem(row_idx, 0, QTableWidgetItem(str(row_data['id'])))
                 self.project_table.setItem(row_idx, 1, QTableWidgetItem(row_data['title']))
                 self.project_table.setItem(row_idx, 2, QTableWidgetItem(row_data['creation_date']))
                 self.project_table.setItem(row_idx, 3, QTableWidgetItem(str(row_data['tiraj'])))
+            self.project_table.setUpdatesEnabled(True)
         except mysql.connector.Error as err:
             QMessageBox.warning(self, "خطا", f"بارگذاری پروژه‌ها با خطا مواجه شد:\n{err}")
     
@@ -910,8 +914,8 @@ class BookCostCalculator(QMainWindow):
             self.cursor.execute(
                 "SELECT item_value FROM categories WHERE category_name = %s", (category_name,)
             )
-            for row in self.cursor.fetchall():
-                self.def_value_combo.addItem(row['item_value'])
+            items = [row['item_value'] for row in self.cursor.fetchall()]
+            self.def_value_combo.addItems(items)
         except Exception as e:
             print("Error populating value combo:", e)
 
@@ -923,9 +927,9 @@ class BookCostCalculator(QMainWindow):
                 "FROM default_cost_mappings ORDER BY category_name, item_value"
             )
             rows = self.cursor.fetchall()
-            self.defaults_table.setRowCount(0)
+            self.defaults_table.setUpdatesEnabled(False)
+            self.defaults_table.setRowCount(len(rows))
             for i, row in enumerate(rows):
-                self.defaults_table.insertRow(i)
                 self.defaults_table.setItem(i, 0, QTableWidgetItem(row['category_name']))
                 self.defaults_table.setItem(i, 1, QTableWidgetItem(row['item_value']))
                 self.defaults_table.setItem(i, 2, QTableWidgetItem(row['target_cost_field']))
@@ -934,6 +938,7 @@ class BookCostCalculator(QMainWindow):
                 self.defaults_table.setItem(i, 3, cost_item)
                 # Store the id in the first cell's data for later use
                 self.defaults_table.item(i, 0).setData(Qt.UserRole, row['id'])
+            self.defaults_table.setUpdatesEnabled(True)
         except mysql.connector.Error as err:
             QMessageBox.warning(self, "خطا", f"بارگذاری قیمت‌های پایه با خطا مواجه شد:\n{err}")
 
