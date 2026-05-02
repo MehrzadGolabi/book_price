@@ -5,7 +5,7 @@ import jdatetime
 from PySide6.QtWidgets import (QApplication, QMainWindow, QScrollArea, QWidget, QVBoxLayout,
                                QTabWidget, QFormLayout, QLineEdit, QComboBox,
                                QPushButton, QToolBar, QSpinBox, QDoubleSpinBox, 
-                               QLabel, QMessageBox, QHBoxLayout, QTableWidget, QHeaderView, QFileDialog, QCheckBox, QTableWidgetItem, QInputDialog)
+                               QLabel, QMessageBox, QHBoxLayout, QTableWidget, QHeaderView, QFileDialog, QCheckBox, QTableWidgetItem, QInputDialog, QDialog, QDialogButtonBox)
 from PySide6.QtCore import Qt, QDate
 from PySide6.QtGui import QAction, QFontDatabase, QShortcut, QKeySequence
 import mysql.connector
@@ -78,6 +78,23 @@ class BookCostCalculator(QMainWindow):
         try:
             self.db_conn = mysql.connector.connect(**DB_CONFIG)
             self.cursor = self.db_conn.cursor(dictionary=True)
+
+            # Initialize tables that might not exist in older setups
+            self.cursor.execute("""
+                CREATE TABLE IF NOT EXISTS paper_calculations (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    paper_type VARCHAR(255) NOT NULL,
+                    formula_type VARCHAR(100) NOT NULL,
+                    weight DECIMAL(15,2),
+                    height DECIMAL(15,2),
+                    length DECIMAL(15,2),
+                    bundle_count INT,
+                    bundle_weight DECIMAL(15,2),
+                    price DECIMAL(15,2),
+                    unit_price DECIMAL(15,2)
+                )
+            """)
+            self.db_conn.commit()
         except mysql.connector.Error as err:
             QMessageBox.critical(
                 self, "خطای دیتابیس",
@@ -120,18 +137,21 @@ class BookCostCalculator(QMainWindow):
         self.tab_details = QWidget()
         self.tab_calc = QWidget()
         self.tab_report = QWidget()
+        self.tab_paper_calc = QWidget()
         self.tab_defaults = QWidget()
 
         self.tabs.addTab(self.tab_project, "مدیریت پروژه‌ها")
         self.tabs.addTab(self.tab_details, "ورود اطلاعات و هزینه‌ها")
         self.tabs.addTab(self.tab_calc, "محاسبات نهایی")
         self.tabs.addTab(self.tab_report, "گزارش‌گیری (PDF)")
+        self.tabs.addTab(self.tab_paper_calc, "محاسبات پیش‌پردازش کاغذ")
         self.tabs.addTab(self.tab_defaults, "مدیریت قیمت‌های پایه")
 
         self.setup_project_tab()
         self.setup_details_tab()
         self.setup_calc_tab()
         self.setup_report_tab()
+        self.setup_paper_calc_tab()
         self.setup_default_costs_tab()
 
     def setup_project_tab(self):
@@ -843,6 +863,299 @@ class BookCostCalculator(QMainWindow):
             self.db_conn.rollback()
             QMessageBox.critical(self, "خطا", f"حذف پروژه با مشکل مواجه شد:\n{err}")
             
+    def setup_paper_calc_tab(self):
+        layout = QVBoxLayout()
+
+        # Form layout for inputs
+        form = QFormLayout()
+
+        self.paper_type_combo = QComboBox()
+        self.paper_type_combo.setEditable(True)
+        self.paper_type_combo.setInsertPolicy(QComboBox.InsertAtBottom)
+        self.paper_type_combo.addItems([
+            "ایندربرد", "گلاسه", "بالک", "پشت طوسی", "تحریر", "مقوای مغزی"
+        ])
+        form.addRow("نوع کاغذ:", self.paper_type_combo)
+
+        self.paper_formula_combo = QComboBox()
+        self.paper_formula_combo.addItems([
+            "ابعاد، وزن و قیمت (هر واحد)",
+            "قیمت هر بند و تعداد در بند",
+            "دستی"
+        ])
+        self.paper_formula_combo.currentTextChanged.connect(self.update_paper_inputs_visibility)
+        form.addRow("نحوه محاسبه:", self.paper_formula_combo)
+
+        self.paper_weight_spin = QDoubleSpinBox()
+        self.paper_weight_spin.setMaximum(999999)
+        form.addRow("وزن:", self.paper_weight_spin)
+
+        self.paper_height_spin = QDoubleSpinBox()
+        self.paper_height_spin.setMaximum(999999)
+        form.addRow("ارتفاع (سانتی‌متر):", self.paper_height_spin)
+
+        self.paper_length_spin = QDoubleSpinBox()
+        self.paper_length_spin.setMaximum(999999)
+        form.addRow("طول (سانتی‌متر):", self.paper_length_spin)
+
+        self.paper_bundle_count_spin = QSpinBox()
+        self.paper_bundle_count_spin.setMaximum(999999)
+        form.addRow("تعداد در بند:", self.paper_bundle_count_spin)
+
+        self.paper_bundle_weight_spin = QDoubleSpinBox()
+        self.paper_bundle_weight_spin.setMaximum(999999)
+        form.addRow("وزن در بند:", self.paper_bundle_weight_spin)
+
+        self.paper_price_spin = QDoubleSpinBox()
+        self.paper_price_spin.setMaximum(9999999999.99)
+        self.paper_price_spin.setGroupSeparatorShown(True)
+        form.addRow("قیمت / قیمت بند (تومان):", self.paper_price_spin)
+
+        self.paper_unit_price_lbl = QLabel("0")
+        self.paper_unit_price_lbl.setStyleSheet("font-size: 16px; font-weight: bold; color: darkblue;")
+        form.addRow("قیمت نهایی یک واحد:", self.paper_unit_price_lbl)
+
+        btn_layout = QHBoxLayout()
+        calc_btn = QPushButton("محاسبه")
+        calc_btn.clicked.connect(self.calculate_paper_unit_price)
+
+        save_btn = QPushButton("ذخیره محاسبه")
+        save_btn.clicked.connect(self.save_paper_calculation)
+
+        delete_btn = QPushButton("حذف ردیف")
+        delete_btn.clicked.connect(self.delete_paper_calculation)
+
+        export_btn = QPushButton("انتقال به مدیریت قیمت‌های پایه")
+        export_btn.clicked.connect(self.export_paper_to_defaults)
+
+        btn_layout.addWidget(calc_btn)
+        btn_layout.addWidget(save_btn)
+        btn_layout.addWidget(delete_btn)
+        btn_layout.addWidget(export_btn)
+
+        layout.addLayout(form)
+        layout.addLayout(btn_layout)
+
+        # Table
+        self.paper_calc_table = QTableWidget(0, 10)
+        self.paper_calc_table.setHorizontalHeaderLabels([
+            "ID", "نوع کاغذ", "نحوه محاسبه", "وزن", "ارتفاع", "طول",
+            "تعداد در بند", "وزن در بند", "قیمت ورودی", "قیمت واحد"
+        ])
+        self.paper_calc_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.paper_calc_table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.paper_calc_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.paper_calc_table.doubleClicked.connect(self.load_selected_paper_calc)
+
+        layout.addWidget(self.paper_calc_table)
+        self.tab_paper_calc.setLayout(layout)
+
+        self.update_paper_inputs_visibility()
+        self.load_paper_calculations()
+
+    def update_paper_inputs_visibility(self):
+        formula = self.paper_formula_combo.currentText()
+        if formula == "ابعاد، وزن و قیمت (هر واحد)":
+            self.paper_weight_spin.setEnabled(True)
+            self.paper_height_spin.setEnabled(True)
+            self.paper_length_spin.setEnabled(True)
+            self.paper_bundle_count_spin.setEnabled(False)
+            self.paper_bundle_weight_spin.setEnabled(False)
+            self.paper_price_spin.setEnabled(True)
+        elif formula == "قیمت هر بند و تعداد در بند":
+            self.paper_weight_spin.setEnabled(False)
+            self.paper_height_spin.setEnabled(False)
+            self.paper_length_spin.setEnabled(False)
+            self.paper_bundle_count_spin.setEnabled(True)
+            self.paper_bundle_weight_spin.setEnabled(True)
+            self.paper_price_spin.setEnabled(True)
+        else: # دستی
+            self.paper_weight_spin.setEnabled(False)
+            self.paper_height_spin.setEnabled(False)
+            self.paper_length_spin.setEnabled(False)
+            self.paper_bundle_count_spin.setEnabled(False)
+            self.paper_bundle_weight_spin.setEnabled(False)
+            self.paper_price_spin.setEnabled(True)
+
+    def calculate_paper_unit_price(self):
+        formula = self.paper_formula_combo.currentText()
+        price = self.paper_price_spin.value()
+        unit_price = 0
+
+        if formula == "ابعاد، وزن و قیمت (هر واحد)":
+            height = self.paper_height_spin.value()
+            length = self.paper_length_spin.value()
+            weight = self.paper_weight_spin.value()
+            if height > 0 and length > 0 and weight > 0:
+                unit_price = ((height * length) * weight / 10000) * (price / 1000)
+        elif formula == "قیمت هر بند و تعداد در بند":
+            count = self.paper_bundle_count_spin.value()
+            if count > 0:
+                unit_price = price / count
+        else: # دستی
+            unit_price = price
+
+        self.paper_unit_price_lbl.setText(f"{unit_price:,.2f}")
+        return unit_price
+
+    def save_paper_calculation(self):
+        unit_price = self.calculate_paper_unit_price()
+        if unit_price <= 0:
+            QMessageBox.warning(self, "خطا", "قیمت محاسبه شده نامعتبر است.")
+            return
+
+        paper_type = self.paper_type_combo.currentText().strip()
+        formula = self.paper_formula_combo.currentText()
+        weight = self.paper_weight_spin.value() if self.paper_weight_spin.isEnabled() else 0
+        height = self.paper_height_spin.value() if self.paper_height_spin.isEnabled() else 0
+        length = self.paper_length_spin.value() if self.paper_length_spin.isEnabled() else 0
+        bundle_count = self.paper_bundle_count_spin.value() if self.paper_bundle_count_spin.isEnabled() else 0
+        bundle_weight = self.paper_bundle_weight_spin.value() if self.paper_bundle_weight_spin.isEnabled() else 0
+        price = self.paper_price_spin.value()
+
+        try:
+            if hasattr(self, 'editing_paper_calc_id') and self.editing_paper_calc_id is not None:
+                self.cursor.execute("""
+                    UPDATE paper_calculations
+                    SET paper_type=%s, formula_type=%s, weight=%s, height=%s, length=%s,
+                        bundle_count=%s, bundle_weight=%s, price=%s, unit_price=%s
+                    WHERE id=%s
+                """, (paper_type, formula, weight, height, length, bundle_count, bundle_weight, price, unit_price, self.editing_paper_calc_id))
+            else:
+                self.cursor.execute("""
+                    INSERT INTO paper_calculations
+                    (paper_type, formula_type, weight, height, length, bundle_count, bundle_weight, price, unit_price)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """, (paper_type, formula, weight, height, length, bundle_count, bundle_weight, price, unit_price))
+
+            self.db_conn.commit()
+            self.load_paper_calculations()
+            self.editing_paper_calc_id = None
+        except mysql.connector.Error as err:
+            QMessageBox.critical(self, "خطا", f"ذخیره محاسبه با خطا مواجه شد:\n{err}")
+
+    def load_paper_calculations(self):
+        try:
+            self.cursor.execute("SELECT * FROM paper_calculations ORDER BY id DESC")
+            rows = self.cursor.fetchall()
+            self.paper_calc_table.setRowCount(0)
+            for row in rows:
+                row_idx = self.paper_calc_table.rowCount()
+                self.paper_calc_table.insertRow(row_idx)
+
+                self.paper_calc_table.setItem(row_idx, 0, QTableWidgetItem(str(row['id'])))
+                self.paper_calc_table.setItem(row_idx, 1, QTableWidgetItem(row['paper_type']))
+                self.paper_calc_table.setItem(row_idx, 2, QTableWidgetItem(row['formula_type']))
+                self.paper_calc_table.setItem(row_idx, 3, QTableWidgetItem(str(row['weight'])))
+                self.paper_calc_table.setItem(row_idx, 4, QTableWidgetItem(str(row['height'])))
+                self.paper_calc_table.setItem(row_idx, 5, QTableWidgetItem(str(row['length'])))
+                self.paper_calc_table.setItem(row_idx, 6, QTableWidgetItem(str(row['bundle_count'])))
+                self.paper_calc_table.setItem(row_idx, 7, QTableWidgetItem(str(row['bundle_weight'])))
+                self.paper_calc_table.setItem(row_idx, 8, QTableWidgetItem(f"{row['price']:,.2f}"))
+                self.paper_calc_table.setItem(row_idx, 9, QTableWidgetItem(f"{row['unit_price']:,.2f}"))
+
+            self.paper_calc_table.hideColumn(0) # Hide ID
+        except mysql.connector.Error as err:
+            QMessageBox.warning(self, "خطا", f"بارگذاری محاسبات با خطا مواجه شد:\n{err}")
+
+    def load_selected_paper_calc(self):
+        row = self.paper_calc_table.currentRow()
+        if row < 0: return
+
+        calc_id = int(self.paper_calc_table.item(row, 0).text())
+        self.editing_paper_calc_id = calc_id
+
+        self.paper_type_combo.setCurrentText(self.paper_calc_table.item(row, 1).text())
+        self.paper_formula_combo.setCurrentText(self.paper_calc_table.item(row, 2).text())
+
+        self.paper_weight_spin.setValue(float(self.paper_calc_table.item(row, 3).text()))
+        self.paper_height_spin.setValue(float(self.paper_calc_table.item(row, 4).text()))
+        self.paper_length_spin.setValue(float(self.paper_calc_table.item(row, 5).text()))
+        self.paper_bundle_count_spin.setValue(int(self.paper_calc_table.item(row, 6).text()))
+        self.paper_bundle_weight_spin.setValue(float(self.paper_calc_table.item(row, 7).text()))
+
+        price_text = self.paper_calc_table.item(row, 8).text().replace(',', '')
+        self.paper_price_spin.setValue(float(price_text))
+
+        unit_price_text = self.paper_calc_table.item(row, 9).text().replace(',', '')
+        self.paper_unit_price_lbl.setText(f"{float(unit_price_text):,.2f}")
+
+    def delete_paper_calculation(self):
+        row = self.paper_calc_table.currentRow()
+        if row < 0:
+            QMessageBox.warning(self, "خطا", "لطفاً یک ردیف را انتخاب کنید.")
+            return
+
+        calc_id = int(self.paper_calc_table.item(row, 0).text())
+        reply = QMessageBox.question(self, "تأیید حذف", "آیا از حذف این محاسبه اطمینان دارید؟",
+                                    QMessageBox.Yes | QMessageBox.No)
+        if reply == QMessageBox.Yes:
+            try:
+                self.cursor.execute("DELETE FROM paper_calculations WHERE id=%s", (calc_id,))
+                self.db_conn.commit()
+                self.load_paper_calculations()
+                self.editing_paper_calc_id = None
+            except mysql.connector.Error as err:
+                QMessageBox.critical(self, "خطا", f"حذف با خطا مواجه شد:\n{err}")
+
+    def export_paper_to_defaults(self):
+        row = self.paper_calc_table.currentRow()
+        if row < 0:
+            QMessageBox.warning(self, "خطا", "لطفاً یک ردیف محاسبه شده را انتخاب کنید.")
+            return
+
+        paper_type = self.paper_calc_table.item(row, 1).text()
+        unit_price_str = self.paper_calc_table.item(row, 9).text().replace(',', '')
+        unit_price = float(unit_price_str)
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("انتقال به قیمت‌های پایه")
+        layout = QFormLayout(dialog)
+
+        cat_combo = QComboBox()
+        cat_combo.addItems(["نوع کاغذ متن", "نوع کاغذ جلد"])
+        layout.addRow("دسته‌بندی (متن/جلد):", cat_combo)
+
+        item_val_input = QLineEdit(paper_type)
+        layout.addRow("مقدار (نام دقیق ویژگی):", item_val_input)
+
+        cost_field_combo = QComboBox()
+        cost_field_combo.addItems(["هزینه کاغذ متن", "هزینه کاغذ جلد"])
+        layout.addRow("فیلد هزینه هدف:", cost_field_combo)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, Qt.Horizontal, dialog)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addRow(buttons)
+
+        if dialog.exec() == QDialog.Accepted:
+            cat = cat_combo.currentText()
+            val = item_val_input.text().strip()
+            field = cost_field_combo.currentText()
+
+            try:
+                # Check if it already exists
+                self.cursor.execute("SELECT id FROM default_cost_mappings WHERE category_name=%s AND item_value=%s", (cat, val))
+                existing = self.cursor.fetchone()
+
+                if existing:
+                    self.cursor.execute("UPDATE default_cost_mappings SET target_cost_field=%s, default_cost=%s WHERE id=%s",
+                                        (field, unit_price, existing['id']))
+                else:
+                    self.cursor.execute("INSERT INTO default_cost_mappings (category_name, item_value, target_cost_field, default_cost) VALUES (%s, %s, %s, %s)",
+                                        (cat, val, field, unit_price))
+
+                # Add to categories if needed
+                self.cursor.execute("INSERT IGNORE INTO categories (category_name, item_value) VALUES (%s, %s)", (cat, val))
+
+                self.db_conn.commit()
+                self.load_default_costs_table()
+                self.populate_default_value_combo(self.def_cat_combo.currentText())
+                QMessageBox.information(self, "موفقیت", "انتقال به قیمت‌های پایه با موفقیت انجام شد.")
+                self.tabs.setCurrentIndex(5) # Switch to defaults tab
+            except mysql.connector.Error as err:
+                QMessageBox.critical(self, "خطا", f"انتقال با خطا مواجه شد:\n{err}")
+
     def setup_default_costs_tab(self):
         layout = QVBoxLayout()
 

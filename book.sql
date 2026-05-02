@@ -9,6 +9,20 @@ CREATE TABLE IF NOT EXISTS categories (
     UNIQUE(category_name, item_value)
 );
 
+-- Table to store the paper preprocessing calculations
+CREATE TABLE IF NOT EXISTS paper_calculations (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    paper_type VARCHAR(255) NOT NULL,
+    formula_type VARCHAR(100) NOT NULL,
+    weight DECIMAL(15,2),
+    height DECIMAL(15,2),
+    length DECIMAL(15,2),
+    bundle_count INT,
+    bundle_weight DECIMAL(15,2),
+    price DECIMAL(15,2),
+    unit_price DECIMAL(15,2)
+);
+
 -- Table to store the main project details
 CREATE TABLE IF NOT EXISTS projects (
     id INT AUTO_INCREMENT PRIMARY KEY,
