@@ -10,7 +10,6 @@ from PySide6.QtCore import Qt, QDate
 from PySide6.QtGui import QAction, QFontDatabase, QShortcut, QKeySequence
 import sqlite3
 import configparser
-import math
 # Matplotlib imports
 import matplotlib
 from numpy import dtype
@@ -56,15 +55,6 @@ DELETE_PASSWORD = "admin"
 DB_CONFIG = get_db_config()
 
 class BookCostCalculator(QMainWindow):
-    OPTIMAL_SPECS = {
-        "وزیری": {"paper_size": "70x100", "pages_per_sheet": 32, "zinc": "زینک 3.5 ورقی"},
-        "رقعی": {"paper_size": "60x90", "pages_per_sheet": 32, "zinc": "زینک 2.5 ورقی"},
-        "رحلی کوچک": {"paper_size": "60x90", "pages_per_sheet": 16, "zinc": "زینک 2.5 ورقی"},
-        "رحلی بزرگ": {"paper_size": "70x100", "pages_per_sheet": 16, "zinc": "زینک 3.5 ورقی"},
-        "جیبی": {"paper_size": "60x90", "pages_per_sheet": 64, "zinc": "زینک 2.5 ورقی"},
-        "خشتی": {"paper_size": "50x70", "pages_per_sheet": 12, "zinc": "زینک 2 ورقی"},
-    }
-
     def __init__(self):
         super().__init__()
         self.setWindowTitle("نرم افزار محاسبه و مدیریت هزینه‌های چاپ کتاب")
@@ -112,7 +102,6 @@ class BookCostCalculator(QMainWindow):
                         subtitle TEXT,
                         creation_date DATE NOT NULL,
                         qate TEXT,
-                        tedad_safeh INTEGER,
                         tiraj INTEGER NOT NULL,
                         royalty_percent REAL,
                         total_cost REAL,
@@ -162,11 +151,6 @@ class BookCostCalculator(QMainWindow):
                         default_cost REAL NOT NULL
                     );
                 """)
-
-                try:
-                    self.cursor.execute("ALTER TABLE projects ADD COLUMN tedad_safeh INTEGER")
-                except sqlite3.OperationalError:
-                    pass
 
                 self.db_conn.commit()
             except sqlite3.Error as err:
@@ -296,9 +280,6 @@ class BookCostCalculator(QMainWindow):
         self.inputs['قطع'] = QComboBox()
         self.inputs['قطع'].addItems(["جیبی", "رقعی", "وزیری", "خشتی", "رحلی کوچک", "رحلی بزرگ", "بیاضی بزرگ", "سلطانی"])
         
-        self.inputs['تعداد صفحات کتاب'] = QSpinBox()
-        self.inputs['تعداد صفحات کتاب'].setMaximum(5000)
-
         self.inputs['تیراژ'] = QSpinBox()
         self.inputs['تیراژ'].setMaximum(100000)
 
@@ -352,16 +333,10 @@ class BookCostCalculator(QMainWindow):
         # Add to form layout
         form_layout.addRow("عنوان کتاب:", self.inputs['عنوان کتاب'])
         form_layout.addRow("تاریخ:", self.inputs['تاریخ'])
-
-        self.lbl_optimal_paper = QLabel("")
-        self.lbl_optimal_paper.setStyleSheet("color: gray; font-size: 10px;")
-
-        form_layout.addRow("تعداد صفحات کتاب:", self.inputs['تعداد صفحات کتاب'])
-        form_layout.addRow("", self.lbl_optimal_paper)
         form_layout.addRow("تیراژ:", self.inputs['تیراژ'])
         form_layout.addRow("---", QLabel("--- ویژگی‌ها ---"))
         for k, v in self.inputs.items():
-            if k not in ['عنوان کتاب', 'تاریخ', 'تعداد صفحات کتاب', 'تیراژ'] and isinstance(v, QComboBox):
+            if k not in ['عنوان کتاب', 'تاریخ', 'تیراژ'] and isinstance(v, QComboBox):
                 form_layout.addRow(k + ":", v)
                 
         # Basic Paper & Zinc Calculations GroupBox
@@ -428,9 +403,6 @@ class BookCostCalculator(QMainWindow):
         self.color_matn_combo.currentIndexChanged.connect(self.auto_calculate_costs)
         self.color_jeld_combo.currentIndexChanged.connect(self.auto_calculate_costs)
 
-        self.inputs['قطع'].currentIndexChanged.connect(self.suggest_optimal_layout)
-        self.inputs['تعداد صفحات کتاب'].valueChanged.connect(self.suggest_optimal_layout)
-
         # Read only for target cost fields
         self.cost_inputs['هزینه کاغذ متن'].setReadOnly(True)
         self.cost_inputs['هزینه کاغذ جلد'].setReadOnly(True)
@@ -451,21 +423,6 @@ class BookCostCalculator(QMainWindow):
         main_layout = QVBoxLayout(self.tab_details)
         main_layout.addWidget(scroll_area)
 
-
-    def suggest_optimal_layout(self):
-        qate = self.inputs['قطع'].currentText()
-        total_pages = self.inputs['تعداد صفحات کتاب'].value()
-
-        if qate in self.OPTIMAL_SPECS and total_pages > 0:
-            specs = self.OPTIMAL_SPECS[qate]
-            sheets_per_book = math.ceil(total_pages / specs['pages_per_sheet'])
-            calculated_forms = sheets_per_book * 2
-
-            self.form_matn_spin.setValue(calculated_forms)
-            self.zinc_size_matn_combo.setCurrentText(specs['zinc'])
-            self.lbl_optimal_paper.setText(f"کاغذ بهینه: {specs['paper_size']} | ورق مصرفی هر جلد: {sheets_per_book}")
-        else:
-            self.lbl_optimal_paper.setText("")
 
     def auto_calculate_costs(self, *args):
         # Text colors
@@ -624,7 +581,7 @@ class BookCostCalculator(QMainWindow):
                 # --- UPDATE existing project ---
                 query_projects = """
                     UPDATE projects SET
-                        title = ?, subtitle = ?, creation_date = ?, qate = ?, tedad_safeh = ?,
+                        title = ?, subtitle = ?, creation_date = ?, qate = ?,
                         tiraj = ?, royalty_percent = ?, total_cost = ?, single_book_cost = ?
                     WHERE id = ?
                 """
@@ -633,7 +590,6 @@ class BookCostCalculator(QMainWindow):
                     get_val('زیر عنوان کتاب'),
                     get_val('تاریخ'),
                     get_val('قطع'),
-                    get_val('تعداد صفحات کتاب'),
                     get_val('تیراژ'),
                     self.royalty_input.value(),
                     total_cost,
@@ -688,15 +644,14 @@ class BookCostCalculator(QMainWindow):
                 # --- INSERT new project ---
                 query_projects = """
                     INSERT INTO projects 
-                    (title, subtitle, creation_date, qate, tedad_safeh, tiraj, royalty_percent, total_cost, single_book_cost)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (title, subtitle, creation_date, qate, tiraj, royalty_percent, total_cost, single_book_cost)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """
                 val_projects = (
                     title,
                     get_val('زیر عنوان کتاب'),
                     get_val('تاریخ'),
                     get_val('قطع'),
-                    get_val('تعداد صفحات کتاب'),
                     get_val('تیراژ'),
                     self.royalty_input.value(),
                     total_cost,
@@ -1001,7 +956,6 @@ class BookCostCalculator(QMainWindow):
             self.inputs['زیر عنوان کتاب'].setText(project['subtitle'] if project['subtitle'] else '')
             self.inputs['تاریخ'].setText(project['creation_date'])
             self.inputs['قطع'].setCurrentText(project['qate'] if project['qate'] else '')
-            self.inputs['تعداد صفحات کتاب'].setValue(project['tedad_safeh'] if project['tedad_safeh'] else 0)
             self.inputs['تیراژ'].setValue(project['tiraj'])
             self.royalty_input.setValue(project['royalty_percent'])
 
@@ -1110,7 +1064,6 @@ class BookCostCalculator(QMainWindow):
         today_jalali = jdatetime.date.today()
         self.inputs['تاریخ'].setText(today_jalali.strftime("%Y/%m/%d"))
         self.inputs['قطع'].setCurrentIndex(0)
-        self.inputs['تعداد صفحات کتاب'].setValue(0)
         self.inputs['تیراژ'].setValue(0)
 
         # Clear dynamic types (set to first item)
