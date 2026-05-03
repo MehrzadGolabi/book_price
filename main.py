@@ -5,7 +5,7 @@ import jdatetime
 from PySide6.QtWidgets import (QApplication, QMainWindow, QScrollArea, QWidget, QVBoxLayout,
                                QTabWidget, QFormLayout, QLineEdit, QComboBox,
                                QPushButton, QToolBar, QSpinBox, QDoubleSpinBox, 
-                               QLabel, QMessageBox, QHBoxLayout, QTableWidget, QHeaderView, QFileDialog, QCheckBox, QTableWidgetItem, QInputDialog, QDialog, QDialogButtonBox)
+                               QLabel, QMessageBox, QHBoxLayout, QTableWidget, QHeaderView, QFileDialog, QCheckBox, QTableWidgetItem, QInputDialog, QDialog, QDialogButtonBox, QGroupBox)
 from PySide6.QtCore import Qt, QDate
 from PySide6.QtGui import QAction, QFontDatabase, QShortcut, QKeySequence
 import sqlite3
@@ -151,6 +151,27 @@ class BookCostCalculator(QMainWindow):
                         default_cost REAL NOT NULL
                     );
                 """)
+
+            # Gracefully add new columns to existing installations
+            new_columns = [
+                ("form_matn", "INTEGER"),
+                ("is_double_sided_matn", "BOOLEAN"),
+                ("color_count_matn", "INTEGER"),
+                ("zinc_size_matn", "TEXT"),
+                ("form_jeld", "INTEGER"),
+                ("is_double_sided_jeld", "BOOLEAN"),
+                ("color_count_jeld", "INTEGER"),
+                ("zinc_size_jeld", "TEXT"),
+                ("unit_price_paper_matn", "REAL"),
+                ("unit_price_paper_jeld", "REAL"),
+                ("unit_price_zinc", "REAL")
+            ]
+            for col_name, col_type in new_columns:
+                try:
+                    self.cursor.execute(f"ALTER TABLE project_details ADD COLUMN {col_name} {col_type}")
+                except sqlite3.OperationalError:
+                    pass # Column already exists
+
                 self.db_conn.commit()
             except sqlite3.Error as err:
                 QMessageBox.critical(
@@ -338,6 +359,75 @@ class BookCostCalculator(QMainWindow):
             if k not in ['عنوان کتاب', 'تاریخ', 'تیراژ'] and isinstance(v, QComboBox):
                 form_layout.addRow(k + ":", v)
                 
+        # Basic Paper & Zinc Calculations GroupBox
+        self.calc_group = QGroupBox("محاسبات پایه کاغذ و زینک")
+        calc_layout = QFormLayout()
+
+        # Text
+        self.form_matn_spin = QSpinBox()
+        self.double_sided_matn_chk = QCheckBox("چاپ دورو (متن)")
+        self.double_sided_matn_chk.setChecked(True)
+        self.color_matn_combo = QComboBox()
+        self.color_matn_combo.addItems(["تک رنگ (1)", "دو رنگ (2)", "چهار رنگ (4)"])
+        self.zinc_size_matn_combo = QComboBox()
+        self.zinc_size_matn_combo.addItems(["زینک 4.5 ورقی", "زینک 3.5 ورقی", "زینک 2.5 ورقی", "زینک 2 ورقی", "زینک GTO"])
+        self.unit_price_paper_matn_spin = QDoubleSpinBox()
+        self.unit_price_paper_matn_spin.setMaximum(9999999999.99)
+        self.unit_price_paper_matn_spin.setGroupSeparatorShown(True)
+
+        calc_layout.addRow("تعداد فرم متن (دستگاه چاپ):", self.form_matn_spin)
+        calc_layout.addRow("", self.double_sided_matn_chk)
+        calc_layout.addRow("تعداد رنگ متن:", self.color_matn_combo)
+        calc_layout.addRow("ابعاد زینک متن:", self.zinc_size_matn_combo)
+        calc_layout.addRow("قیمت واحد هر ورق کاغذ متن:", self.unit_price_paper_matn_spin)
+
+        # Cover
+        self.form_jeld_spin = QSpinBox()
+        self.double_sided_jeld_chk = QCheckBox("چاپ دورو (جلد)")
+        self.double_sided_jeld_chk.setChecked(False)
+        self.color_jeld_combo = QComboBox()
+        self.color_jeld_combo.addItems(["تک رنگ (1)", "دو رنگ (2)", "چهار رنگ (4)"])
+        self.color_jeld_combo.setCurrentIndex(2)
+        self.zinc_size_jeld_combo = QComboBox()
+        self.zinc_size_jeld_combo.addItems(["زینک 4.5 ورقی", "زینک 3.5 ورقی", "زینک 2.5 ورقی", "زینک 2 ورقی", "زینک GTO"])
+        self.unit_price_paper_jeld_spin = QDoubleSpinBox()
+        self.unit_price_paper_jeld_spin.setMaximum(9999999999.99)
+        self.unit_price_paper_jeld_spin.setGroupSeparatorShown(True)
+
+        calc_layout.addRow("تعداد فرم جلد (دستگاه چاپ):", self.form_jeld_spin)
+        calc_layout.addRow("", self.double_sided_jeld_chk)
+        calc_layout.addRow("تعداد رنگ جلد:", self.color_jeld_combo)
+        calc_layout.addRow("ابعاد زینک جلد:", self.zinc_size_jeld_combo)
+        calc_layout.addRow("قیمت واحد هر ورق کاغذ جلد:", self.unit_price_paper_jeld_spin)
+
+        # Zinc Price
+        self.unit_price_zinc_spin = QDoubleSpinBox()
+        self.unit_price_zinc_spin.setMaximum(9999999999.99)
+        self.unit_price_zinc_spin.setGroupSeparatorShown(True)
+        calc_layout.addRow("قیمت واحد هر زینک:", self.unit_price_zinc_spin)
+
+        self.calc_group.setLayout(calc_layout)
+        form_layout.addRow(self.calc_group)
+
+        # Connect signals for auto calculation
+        widgets_to_connect = [
+            self.form_matn_spin, self.unit_price_paper_matn_spin,
+            self.form_jeld_spin, self.unit_price_paper_jeld_spin,
+            self.unit_price_zinc_spin, self.inputs['تیراژ']
+        ]
+        for w in widgets_to_connect:
+            w.valueChanged.connect(self.auto_calculate_costs)
+
+        self.double_sided_matn_chk.toggled.connect(self.auto_calculate_costs)
+        self.double_sided_jeld_chk.toggled.connect(self.auto_calculate_costs)
+        self.color_matn_combo.currentIndexChanged.connect(self.auto_calculate_costs)
+        self.color_jeld_combo.currentIndexChanged.connect(self.auto_calculate_costs)
+
+        # Read only for target cost fields
+        self.cost_inputs['هزینه کاغذ متن'].setReadOnly(True)
+        self.cost_inputs['هزینه کاغذ جلد'].setReadOnly(True)
+        self.cost_inputs['هزینه زینک'].setReadOnly(True)
+
         form_layout.addRow("---", QLabel("--- هزینه‌ها (تومان) ---"))
         for k, v in self.cost_inputs.items():
             form_layout.addRow(k + ":", v)
@@ -353,6 +443,36 @@ class BookCostCalculator(QMainWindow):
         main_layout = QVBoxLayout(self.tab_details)
         main_layout.addWidget(scroll_area)
 
+
+    def auto_calculate_costs(self, *args):
+        # Text colors
+        text_colors = 1 if self.color_matn_combo.currentIndex() == 0 else (2 if self.color_matn_combo.currentIndex() == 1 else 4)
+
+        # Cover colors
+        cover_colors = 1 if self.color_jeld_combo.currentIndex() == 0 else (2 if self.color_jeld_combo.currentIndex() == 1 else 4)
+
+        # Sides
+        sides_matn = 2 if self.double_sided_matn_chk.isChecked() else 1
+        sides_jeld = 2 if self.double_sided_jeld_chk.isChecked() else 1
+
+        # Tiraj
+        tiraj = self.inputs['تیراژ'].value()
+
+        # Paper Text
+        total_paper_matn = (self.form_matn_spin.value() / sides_matn) * tiraj
+        calculated_paper_cost_matn = total_paper_matn * self.unit_price_paper_matn_spin.value()
+        self.cost_inputs['هزینه کاغذ متن'].setValue(calculated_paper_cost_matn)
+
+        # Paper Cover
+        total_paper_jeld = (self.form_jeld_spin.value() / sides_jeld) * tiraj
+        calculated_paper_cost_jeld = total_paper_jeld * self.unit_price_paper_jeld_spin.value()
+        self.cost_inputs['هزینه کاغذ جلد'].setValue(calculated_paper_cost_jeld)
+
+        # Zinc
+        total_zincs_matn = self.form_matn_spin.value() * text_colors
+        total_zincs_jeld = self.form_jeld_spin.value() * cover_colors
+        total_zinc_cost = (total_zincs_matn + total_zincs_jeld) * self.unit_price_zinc_spin.value()
+        self.cost_inputs['هزینه زینک'].setValue(total_zinc_cost)
 
     def perform_calculations(self):
         # 1. Sum all costs
@@ -503,6 +623,9 @@ class BookCostCalculator(QMainWindow):
                     UPDATE project_details SET
                         noeh_kaghaz_matn = ?, noeh_chap_matn = ?, noeh_rang_matn = ?, noeh_zink_matn = ?,
                         noeh_kaghaz_jeld = ?, noeh_chap_jeld = ?, noeh_rang_jeld = ?, noeh_zink_jeld = ?,
+                        form_matn = ?, is_double_sided_matn = ?, color_count_matn = ?, zinc_size_matn = ?,
+                        form_jeld = ?, is_double_sided_jeld = ?, color_count_jeld = ?, zinc_size_jeld = ?,
+                        unit_price_paper_matn = ?, unit_price_paper_jeld = ?, unit_price_zinc = ?,
                         hazineh_talif = ?, hazineh_tarjomeh = ?, hazineh_tasvir = ?, hazineh_virayesh = ?,
                         hazineh_tarahi_jeld = ?, hazineh_modiriat_atelieh = ?, hazineh_zink = ?,
                         hazineh_chap_matn = ?, hazineh_chap_jeld = ?, hazineh_kaghaz_matn = ?,
@@ -515,6 +638,13 @@ class BookCostCalculator(QMainWindow):
                 val_details = (
                     get_val('نوع کاغذ متن'), get_val('نوع چاپ متن'), get_val('نوع رنگ متن'), get_val('نوع زینک متن'),
                     get_val('نوع کاغذ جلد'), get_val('نوع چاپ جلد'), get_val('نوع رنگ جلد'), get_val('نوع زینک جلد'),
+                    self.form_matn_spin.value(), int(self.double_sided_matn_chk.isChecked()),
+                    1 if self.color_matn_combo.currentIndex() == 0 else (2 if self.color_matn_combo.currentIndex() == 1 else 4),
+                    self.zinc_size_matn_combo.currentText(),
+                    self.form_jeld_spin.value(), int(self.double_sided_jeld_chk.isChecked()),
+                    1 if self.color_jeld_combo.currentIndex() == 0 else (2 if self.color_jeld_combo.currentIndex() == 1 else 4),
+                    self.zinc_size_jeld_combo.currentText(),
+                    self.unit_price_paper_matn_spin.value(), self.unit_price_paper_jeld_spin.value(), self.unit_price_zinc_spin.value(),
                     self.cost_inputs['هزینه تالیف'].value(), self.cost_inputs['هزینه ترجمه'].value(),
                     self.cost_inputs['هزینه تصویرگری'].value(), self.cost_inputs['هزینه ویرایش'].value(),
                     self.cost_inputs['هزینه طراحی جلد'].value(), self.cost_inputs['هزینه مديريت آتليه'].value(),
@@ -555,6 +685,9 @@ class BookCostCalculator(QMainWindow):
                     INSERT INTO project_details (
                         project_id, noeh_kaghaz_matn, noeh_chap_matn, noeh_rang_matn, noeh_zink_matn,
                         noeh_kaghaz_jeld, noeh_chap_jeld, noeh_rang_jeld, noeh_zink_jeld,
+                        form_matn, is_double_sided_matn, color_count_matn, zinc_size_matn,
+                        form_jeld, is_double_sided_jeld, color_count_jeld, zinc_size_jeld,
+                        unit_price_paper_matn, unit_price_paper_jeld, unit_price_zinc,
                         hazineh_talif, hazineh_tarjomeh, hazineh_tasvir, hazineh_virayesh,
                         hazineh_tarahi_jeld, hazineh_modiriat_atelieh, hazineh_zink, hazineh_chap_matn,
                         hazineh_chap_jeld, hazineh_kaghaz_matn, hazineh_kaghaz_jeld, hazineh_rokesh_salfon,
@@ -563,6 +696,7 @@ class BookCostCalculator(QMainWindow):
                         hazineh_boresh_bastebandi, hazineh_haml_naghl, hazineh_montaj
                     ) VALUES (
                         ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                         ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
                     )
                 """
@@ -570,6 +704,13 @@ class BookCostCalculator(QMainWindow):
                     project_id,
                     get_val('نوع کاغذ متن'), get_val('نوع چاپ متن'), get_val('نوع رنگ متن'), get_val('نوع زینک متن'),
                     get_val('نوع کاغذ جلد'), get_val('نوع چاپ جلد'), get_val('نوع رنگ جلد'), get_val('نوع زینک جلد'),
+                    self.form_matn_spin.value(), int(self.double_sided_matn_chk.isChecked()),
+                    1 if self.color_matn_combo.currentIndex() == 0 else (2 if self.color_matn_combo.currentIndex() == 1 else 4),
+                    self.zinc_size_matn_combo.currentText(),
+                    self.form_jeld_spin.value(), int(self.double_sided_jeld_chk.isChecked()),
+                    1 if self.color_jeld_combo.currentIndex() == 0 else (2 if self.color_jeld_combo.currentIndex() == 1 else 4),
+                    self.zinc_size_jeld_combo.currentText(),
+                    self.unit_price_paper_matn_spin.value(), self.unit_price_paper_jeld_spin.value(), self.unit_price_zinc_spin.value(),
                     self.cost_inputs['هزینه تالیف'].value(), self.cost_inputs['هزینه ترجمه'].value(),
                     self.cost_inputs['هزینه تصویرگری'].value(), self.cost_inputs['هزینه ویرایش'].value(),
                     self.cost_inputs['هزینه طراحی جلد'].value(), self.cost_inputs['هزینه مديريت آتليه'].value(),
@@ -854,6 +995,34 @@ class BookCostCalculator(QMainWindow):
                     if col_name in details and details[col_name]:
                         self.inputs[persian_key].setCurrentText(details[col_name])
 
+                # Populate base calculations
+                if 'form_matn' in details and details['form_matn'] is not None:
+                    self.form_matn_spin.setValue(details['form_matn'])
+                if 'is_double_sided_matn' in details and details['is_double_sided_matn'] is not None:
+                    self.double_sided_matn_chk.setChecked(bool(details['is_double_sided_matn']))
+                if 'color_count_matn' in details and details['color_count_matn'] is not None:
+                    color_matn = details['color_count_matn']
+                    self.color_matn_combo.setCurrentIndex(0 if color_matn == 1 else (1 if color_matn == 2 else 2))
+                if 'zinc_size_matn' in details and details['zinc_size_matn']:
+                    self.zinc_size_matn_combo.setCurrentText(details['zinc_size_matn'])
+                if 'unit_price_paper_matn' in details and details['unit_price_paper_matn'] is not None:
+                    self.unit_price_paper_matn_spin.setValue(details['unit_price_paper_matn'])
+
+                if 'form_jeld' in details and details['form_jeld'] is not None:
+                    self.form_jeld_spin.setValue(details['form_jeld'])
+                if 'is_double_sided_jeld' in details and details['is_double_sided_jeld'] is not None:
+                    self.double_sided_jeld_chk.setChecked(bool(details['is_double_sided_jeld']))
+                if 'color_count_jeld' in details and details['color_count_jeld'] is not None:
+                    color_jeld = details['color_count_jeld']
+                    self.color_jeld_combo.setCurrentIndex(0 if color_jeld == 1 else (1 if color_jeld == 2 else 2))
+                if 'zinc_size_jeld' in details and details['zinc_size_jeld']:
+                    self.zinc_size_jeld_combo.setCurrentText(details['zinc_size_jeld'])
+                if 'unit_price_paper_jeld' in details and details['unit_price_paper_jeld'] is not None:
+                    self.unit_price_paper_jeld_spin.setValue(details['unit_price_paper_jeld'])
+
+                if 'unit_price_zinc' in details and details['unit_price_zinc'] is not None:
+                    self.unit_price_zinc_spin.setValue(details['unit_price_zinc'])
+
                 cost_mapping = {
                     'هزینه تالیف': 'hazineh_talif',
                     'هزینه ترجمه': 'hazineh_tarjomeh',
@@ -921,6 +1090,19 @@ class BookCostCalculator(QMainWindow):
         for key, widget in self.inputs.items():
             if isinstance(widget, QComboBox) and key != 'قطع':
                 widget.setCurrentIndex(-1)
+
+        # Clear base calculations
+        self.form_matn_spin.setValue(0)
+        self.double_sided_matn_chk.setChecked(True)
+        self.color_matn_combo.setCurrentIndex(0)
+        self.zinc_size_matn_combo.setCurrentIndex(0)
+        self.unit_price_paper_matn_spin.setValue(0.0)
+        self.form_jeld_spin.setValue(0)
+        self.double_sided_jeld_chk.setChecked(False)
+        self.color_jeld_combo.setCurrentIndex(2)
+        self.zinc_size_jeld_combo.setCurrentIndex(0)
+        self.unit_price_paper_jeld_spin.setValue(0.0)
+        self.unit_price_zinc_spin.setValue(0.0)
 
         # Clear costs
         for spin in self.cost_inputs.values():
