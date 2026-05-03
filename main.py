@@ -152,26 +152,7 @@ class BookCostCalculator(QMainWindow):
                     );
                 """)
 
-            # Gracefully add new columns to existing installations
-            new_columns = [
-                ("form_matn", "INTEGER"),
-                ("is_double_sided_matn", "BOOLEAN"),
-                ("color_count_matn", "INTEGER"),
-                ("zinc_size_matn", "TEXT"),
-                ("form_jeld", "INTEGER"),
-                ("is_double_sided_jeld", "BOOLEAN"),
-                ("color_count_jeld", "INTEGER"),
-                ("zinc_size_jeld", "TEXT"),
-                ("unit_price_paper_matn", "REAL"),
-                ("unit_price_paper_jeld", "REAL"),
-                ("unit_price_zinc", "REAL")
-            ]
-            for col_name, col_type in new_columns:
-                try:
-                    self.cursor.execute(f"ALTER TABLE project_details ADD COLUMN {col_name} {col_type}")
-                except sqlite3.OperationalError:
-                    pass # Column already exists
-
+ 
                 self.db_conn.commit()
             except sqlite3.Error as err:
                 QMessageBox.critical(
