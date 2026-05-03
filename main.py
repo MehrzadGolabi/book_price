@@ -8,7 +8,8 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QScrollArea, QWidget, 
                                QLabel, QMessageBox, QHBoxLayout, QTableWidget, QHeaderView, QFileDialog, QCheckBox, QTableWidgetItem, QInputDialog, QDialog, QDialogButtonBox)
 from PySide6.QtCore import Qt, QDate
 from PySide6.QtGui import QAction, QFontDatabase, QShortcut, QKeySequence
-import mysql.connector
+import sqlite3
+import configparser
 # Matplotlib imports
 import matplotlib
 from numpy import dtype
@@ -24,17 +25,11 @@ from reportlab.pdfgen import canvas
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.lib.units import cm
-import configparser
-
 def get_db_config():
-    """Reads database config from config.ini, falls back to hard‑coded defaults."""
+    """Reads database config from config.ini."""
     # Default config
     default_config = {
-        'host': 'localhost',
-        'user': 'book_admin',
-        'password': 'book',
-        'database': 'book_publishing',
-        'charset': 'utf8mb4'
+        'filename': 'book_publishing.db'
     }
 
     # Determine the path of config.ini (same directory as the executable/script)
@@ -50,9 +45,8 @@ def get_db_config():
     if os.path.exists(config_path):
         config.read(config_path, encoding='utf-8')
         if 'database' in config:
-            for key in default_config.keys():
-                if key in config['database']:
-                    default_config[key] = config['database'][key]
+            if 'filename' in config['database']:
+                default_config['filename'] = config['database']['filename']
 
     return default_config
 
@@ -76,13 +70,14 @@ class BookCostCalculator(QMainWindow):
 
     def connect_db(self):
         try:
-            self.db_conn = mysql.connector.connect(**DB_CONFIG)
-            self.cursor = self.db_conn.cursor(dictionary=True)
+            self.db_conn = sqlite3.connect(DB_CONFIG['filename'])
+            self.db_conn.row_factory = sqlite3.Row
+            self.cursor = self.db_conn.cursor()
 
             # Initialize tables that might not exist in older setups
             self.cursor.execute("""
                 CREATE TABLE IF NOT EXISTS paper_calculations (
-                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
                     paper_type VARCHAR(255) NOT NULL,
                     formula_type VARCHAR(100) NOT NULL,
                     weight DECIMAL(15,2),
@@ -95,7 +90,7 @@ class BookCostCalculator(QMainWindow):
                 )
             """)
             self.db_conn.commit()
-        except mysql.connector.Error as err:
+        except sqlite3.Error as err:
             QMessageBox.critical(
                 self, "خطای دیتابیس",
                 f"ارتباط با دیتابیس برقرار نشد.\nلطفاً فایل config.ini را بررسی کنید.\n\n{err}"
@@ -337,7 +332,7 @@ class BookCostCalculator(QMainWindow):
                     # It's a new entry, save to DB
                     try:
                         self.cursor.execute(
-                            "INSERT IGNORE INTO categories (category_name, item_value) VALUES (%s, %s)", 
+                            "INSERT OR IGNORE INTO categories (category_name, item_value) VALUES (?, ?)",
                             (category, current_text)
                         )
                         self.db_conn.commit()
@@ -423,9 +418,9 @@ class BookCostCalculator(QMainWindow):
                 # --- UPDATE existing project ---
                 query_projects = """
                     UPDATE projects SET
-                        title = %s, subtitle = %s, creation_date = %s, qate = %s,
-                        tiraj = %s, royalty_percent = %s, total_cost = %s, single_book_cost = %s
-                    WHERE id = %s
+                        title = ?, subtitle = ?, creation_date = ?, qate = ?,
+                        tiraj = ?, royalty_percent = ?, total_cost = ?, single_book_cost = ?
+                    WHERE id = ?
                 """
                 val_projects = (
                     title,
@@ -443,16 +438,16 @@ class BookCostCalculator(QMainWindow):
                 # Update project_details
                 query_details = """
                     UPDATE project_details SET
-                        noeh_kaghaz_matn = %s, noeh_chap_matn = %s, noeh_rang_matn = %s, noeh_zink_matn = %s,
-                        noeh_kaghaz_jeld = %s, noeh_chap_jeld = %s, noeh_rang_jeld = %s, noeh_zink_jeld = %s,
-                        hazineh_talif = %s, hazineh_tarjomeh = %s, hazineh_tasvir = %s, hazineh_virayesh = %s,
-                        hazineh_tarahi_jeld = %s, hazineh_modiriat_atelieh = %s, hazineh_zink = %s,
-                        hazineh_chap_matn = %s, hazineh_chap_jeld = %s, hazineh_kaghaz_matn = %s,
-                        hazineh_kaghaz_jeld = %s, hazineh_rokesh_salfon = %s, hazineh_moghava_maghzi = %s,
-                        hazineh_ghaleb_letterpress = %s, hazineh_ghaleb_diecut = %s, hazineh_khat_ta = %s,
-                        hazineh_malzomat = %s, hazineh_jeldsazi = %s, hazineh_sahafi = %s,
-                        hazineh_boresh_bastebandi = %s, hazineh_haml_naghl = %s, hazineh_montaj = %s
-                    WHERE project_id = %s
+                        noeh_kaghaz_matn = ?, noeh_chap_matn = ?, noeh_rang_matn = ?, noeh_zink_matn = ?,
+                        noeh_kaghaz_jeld = ?, noeh_chap_jeld = ?, noeh_rang_jeld = ?, noeh_zink_jeld = ?,
+                        hazineh_talif = ?, hazineh_tarjomeh = ?, hazineh_tasvir = ?, hazineh_virayesh = ?,
+                        hazineh_tarahi_jeld = ?, hazineh_modiriat_atelieh = ?, hazineh_zink = ?,
+                        hazineh_chap_matn = ?, hazineh_chap_jeld = ?, hazineh_kaghaz_matn = ?,
+                        hazineh_kaghaz_jeld = ?, hazineh_rokesh_salfon = ?, hazineh_moghava_maghzi = ?,
+                        hazineh_ghaleb_letterpress = ?, hazineh_ghaleb_diecut = ?, hazineh_khat_ta = ?,
+                        hazineh_malzomat = ?, hazineh_jeldsazi = ?, hazineh_sahafi = ?,
+                        hazineh_boresh_bastebandi = ?, hazineh_haml_naghl = ?, hazineh_montaj = ?
+                    WHERE project_id = ?
                 """
                 val_details = (
                     get_val('نوع کاغذ متن'), get_val('نوع چاپ متن'), get_val('نوع رنگ متن'), get_val('نوع زینک متن'),
@@ -477,7 +472,7 @@ class BookCostCalculator(QMainWindow):
                 query_projects = """
                     INSERT INTO projects 
                     (title, subtitle, creation_date, qate, tiraj, royalty_percent, total_cost, single_book_cost)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """
                 val_projects = (
                     title,
@@ -504,8 +499,8 @@ class BookCostCalculator(QMainWindow):
                         hazineh_khat_ta, hazineh_malzomat, hazineh_jeldsazi, hazineh_sahafi,
                         hazineh_boresh_bastebandi, hazineh_haml_naghl, hazineh_montaj
                     ) VALUES (
-                        %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                        ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
                     )
                 """
                 val_details = (
@@ -534,7 +529,7 @@ class BookCostCalculator(QMainWindow):
             self.load_projects()  # reload the table to show changes
             QMessageBox.information(self, "موفقیت", "اطلاعات پروژه با موفقیت ذخیره شد!")
 
-        except mysql.connector.Error as err:
+        except sqlite3.Error as err:
             self.db_conn.rollback()
             QMessageBox.critical(self, "خطای ذخیره‌سازی", f"مشکلی در ذخیره اطلاعات پیش آمد:\n{err}")
         
@@ -726,7 +721,7 @@ class BookCostCalculator(QMainWindow):
     def load_projects(self, filter_text=None):
         try:
             if filter_text:
-                query = "SELECT id, title, creation_date, tiraj FROM projects WHERE title LIKE %s ORDER BY id DESC"
+                query = "SELECT id, title, creation_date, tiraj FROM projects WHERE title LIKE ? ORDER BY id DESC"
                 self.cursor.execute(query, ('%' + filter_text + '%',))
             else:
                 query = "SELECT id, title, creation_date, tiraj FROM projects ORDER BY id DESC"
@@ -742,7 +737,7 @@ class BookCostCalculator(QMainWindow):
                 self.project_table.setItem(row_idx, 2, QTableWidgetItem(row_data['creation_date']))
                 self.project_table.setItem(row_idx, 3, QTableWidgetItem(str(row_data['tiraj'])))
             self.project_table.setUpdatesEnabled(True)
-        except mysql.connector.Error as err:
+        except sqlite3.Error as err:
             QMessageBox.warning(self, "خطا", f"بارگذاری پروژه‌ها با خطا مواجه شد:\n{err}")
     
     def search_projects(self):
@@ -762,14 +757,14 @@ class BookCostCalculator(QMainWindow):
         """Loads a project's data into the details tab given its ID."""
         try:
             # Fetch main project info
-            self.cursor.execute("SELECT * FROM projects WHERE id = %s", (project_id,))
+            self.cursor.execute("SELECT * FROM projects WHERE id = ?", (project_id,))
             project = self.cursor.fetchone()
             if not project:
                 QMessageBox.warning(self, "خطا", "پروژه‌ای با این شناسه یافت نشد.")
                 return
 
             # Fetch detailed info
-            self.cursor.execute("SELECT * FROM project_details WHERE project_id = %s", (project_id,))
+            self.cursor.execute("SELECT * FROM project_details WHERE project_id = ?", (project_id,))
             details = self.cursor.fetchone()
 
             # Populate basic fields
@@ -830,7 +825,7 @@ class BookCostCalculator(QMainWindow):
             self.tabs.setCurrentIndex(1)  # Switch to details tab
             QMessageBox.information(self, "بارگذاری", "پروژه با موفقیت بارگذاری شد. پس از ویرایش می‌توانید ذخیره کنید.")
 
-        except mysql.connector.Error as err:
+        except sqlite3.Error as err:
             QMessageBox.critical(self, "خطا", f"بارگذاری پروژه با خطا مواجه شد:\n{err}")
     
     def load_selected_project(self):
@@ -913,9 +908,9 @@ class BookCostCalculator(QMainWindow):
         # 4. Delete from database
         try:
             # Delete details first (if no ON DELETE CASCADE)
-            self.cursor.execute("DELETE FROM project_details WHERE project_id = %s", (project_id,))
+            self.cursor.execute("DELETE FROM project_details WHERE project_id = ?", (project_id,))
             # Delete main project
-            self.cursor.execute("DELETE FROM projects WHERE id = %s", (project_id,))
+            self.cursor.execute("DELETE FROM projects WHERE id = ?", (project_id,))
             self.db_conn.commit()
 
             # 5. Refresh the project table
@@ -927,7 +922,7 @@ class BookCostCalculator(QMainWindow):
 
             QMessageBox.information(self, "موفقیت", "پروژه با موفقیت حذف شد.")
 
-        except mysql.connector.Error as err:
+        except sqlite3.Error as err:
             self.db_conn.rollback()
             QMessageBox.critical(self, "خطا", f"حذف پروژه با مشکل مواجه شد:\n{err}")
             
@@ -1085,21 +1080,21 @@ class BookCostCalculator(QMainWindow):
             if hasattr(self, 'editing_paper_calc_id') and self.editing_paper_calc_id is not None:
                 self.cursor.execute("""
                     UPDATE paper_calculations
-                    SET paper_type=%s, formula_type=%s, weight=%s, height=%s, length=%s,
-                        bundle_count=%s, bundle_weight=%s, price=%s, unit_price=%s
-                    WHERE id=%s
+                    SET paper_type=?, formula_type=?, weight=?, height=?, length=?,
+                        bundle_count=?, bundle_weight=?, price=?, unit_price=?
+                    WHERE id=?
                 """, (paper_type, formula, weight, height, length, bundle_count, bundle_weight, price, unit_price, self.editing_paper_calc_id))
             else:
                 self.cursor.execute("""
                     INSERT INTO paper_calculations
                     (paper_type, formula_type, weight, height, length, bundle_count, bundle_weight, price, unit_price)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (paper_type, formula, weight, height, length, bundle_count, bundle_weight, price, unit_price))
 
             self.db_conn.commit()
             self.load_paper_calculations()
             self.editing_paper_calc_id = None
-        except mysql.connector.Error as err:
+        except sqlite3.Error as err:
             QMessageBox.critical(self, "خطا", f"ذخیره محاسبه با خطا مواجه شد:\n{err}")
 
     def load_paper_calculations(self):
@@ -1123,7 +1118,7 @@ class BookCostCalculator(QMainWindow):
                 self.paper_calc_table.setItem(row_idx, 9, QTableWidgetItem(f"{row['unit_price']:,.2f}"))
 
             self.paper_calc_table.hideColumn(0) # Hide ID
-        except mysql.connector.Error as err:
+        except sqlite3.Error as err:
             QMessageBox.warning(self, "خطا", f"بارگذاری محاسبات با خطا مواجه شد:\n{err}")
 
     def load_selected_paper_calc(self):
@@ -1159,11 +1154,11 @@ class BookCostCalculator(QMainWindow):
                                     QMessageBox.Yes | QMessageBox.No)
         if reply == QMessageBox.Yes:
             try:
-                self.cursor.execute("DELETE FROM paper_calculations WHERE id=%s", (calc_id,))
+                self.cursor.execute("DELETE FROM paper_calculations WHERE id=?", (calc_id,))
                 self.db_conn.commit()
                 self.load_paper_calculations()
                 self.editing_paper_calc_id = None
-            except mysql.connector.Error as err:
+            except sqlite3.Error as err:
                 QMessageBox.critical(self, "خطا", f"حذف با خطا مواجه شد:\n{err}")
 
     def export_paper_to_defaults(self):
@@ -1203,25 +1198,25 @@ class BookCostCalculator(QMainWindow):
 
             try:
                 # Check if it already exists
-                self.cursor.execute("SELECT id FROM default_cost_mappings WHERE category_name=%s AND item_value=%s", (cat, val))
+                self.cursor.execute("SELECT id FROM default_cost_mappings WHERE category_name=? AND item_value=?", (cat, val))
                 existing = self.cursor.fetchone()
 
                 if existing:
-                    self.cursor.execute("UPDATE default_cost_mappings SET target_cost_field=%s, default_cost=%s WHERE id=%s",
+                    self.cursor.execute("UPDATE default_cost_mappings SET target_cost_field=?, default_cost=? WHERE id=?",
                                         (field, unit_price, existing['id']))
                 else:
-                    self.cursor.execute("INSERT INTO default_cost_mappings (category_name, item_value, target_cost_field, default_cost) VALUES (%s, %s, %s, %s)",
+                    self.cursor.execute("INSERT INTO default_cost_mappings (category_name, item_value, target_cost_field, default_cost) VALUES (?, ?, ?, ?)",
                                         (cat, val, field, unit_price))
 
                 # Add to categories if needed
-                self.cursor.execute("INSERT IGNORE INTO categories (category_name, item_value) VALUES (%s, %s)", (cat, val))
+                self.cursor.execute("INSERT OR IGNORE INTO categories (category_name, item_value) VALUES (?, ?)", (cat, val))
 
                 self.db_conn.commit()
                 self.load_default_costs_table()
                 self.populate_default_value_combo(self.def_cat_combo.currentText())
                 QMessageBox.information(self, "موفقیت", "انتقال به قیمت‌های پایه با موفقیت انجام شد.")
                 self.tabs.setCurrentIndex(5) # Switch to defaults tab
-            except mysql.connector.Error as err:
+            except sqlite3.Error as err:
                 QMessageBox.critical(self, "خطا", f"انتقال با خطا مواجه شد:\n{err}")
 
     def setup_default_costs_tab(self):
@@ -1293,7 +1288,7 @@ class BookCostCalculator(QMainWindow):
             return
         try:
             self.cursor.execute(
-                "SELECT item_value FROM categories WHERE category_name = %s", (category_name,)
+                "SELECT item_value FROM categories WHERE category_name = ?", (category_name,)
             )
             items = [row['item_value'] for row in self.cursor.fetchall()]
             self.def_value_combo.addItems(items)
@@ -1320,7 +1315,7 @@ class BookCostCalculator(QMainWindow):
                 # Store the id in the first cell's data for later use
                 self.defaults_table.item(i, 0).setData(Qt.UserRole, row['id'])
             self.defaults_table.setUpdatesEnabled(True)
-        except mysql.connector.Error as err:
+        except sqlite3.Error as err:
             QMessageBox.warning(self, "خطا", f"بارگذاری قیمت‌های پایه با خطا مواجه شد:\n{err}")
 
     def add_default_cost_mapping(self):
@@ -1335,20 +1330,20 @@ class BookCostCalculator(QMainWindow):
         try:
             self.cursor.execute(
                 "INSERT INTO default_cost_mappings (category_name, item_value, target_cost_field, default_cost) "
-                "VALUES (%s, %s, %s, %s)",
+                "VALUES (?, ?, ?, ?)",
                 (cat, val, cost_field, cost)
             )
             self.db_conn.commit()
             self.load_default_costs_table()
             # also add the new item_value to the categories table if not present
             self.cursor.execute(
-                "INSERT IGNORE INTO categories (category_name, item_value) VALUES (%s, %s)",
+                "INSERT OR IGNORE INTO categories (category_name, item_value) VALUES (?, ?)",
                 (cat, val)
             )
             self.db_conn.commit()
             # refresh the value combo
             self.populate_default_value_combo(cat)
-        except mysql.connector.Error as err:
+        except sqlite3.Error as err:
             QMessageBox.critical(self, "خطا", f"افزودن قیمت پایه با خطا مواجه شد:\n{err}")
 
     def load_selected_default_for_edit(self):
@@ -1385,15 +1380,15 @@ class BookCostCalculator(QMainWindow):
         cost = self.def_cost_spin.value()
         try:
             self.cursor.execute(
-                "UPDATE default_cost_mappings SET category_name=%s, item_value=%s, "
-                "target_cost_field=%s, default_cost=%s WHERE id=%s",
+                "UPDATE default_cost_mappings SET category_name=?, item_value=?, "
+                "target_cost_field=?, default_cost=? WHERE id=?",
                 (cat, val, cost_field, cost, self.editing_default_id)
             )
             self.db_conn.commit()
             self.load_default_costs_table()
             self.populate_default_value_combo(cat)
             self.editing_default_id = None
-        except mysql.connector.Error as err:
+        except sqlite3.Error as err:
             QMessageBox.critical(self, "خطا", f"ویرایش با خطا مواجه شد:\n{err}")
 
     def delete_default_cost_mapping(self):
@@ -1409,10 +1404,10 @@ class BookCostCalculator(QMainWindow):
         if reply != QMessageBox.Yes:
             return
         try:
-            self.cursor.execute("DELETE FROM default_cost_mappings WHERE id = %s", (mapping_id,))
+            self.cursor.execute("DELETE FROM default_cost_mappings WHERE id = ?", (mapping_id,))
             self.db_conn.commit()
             self.load_default_costs_table()
-        except mysql.connector.Error as err:
+        except sqlite3.Error as err:
             QMessageBox.critical(self, "خطا", f"حذف با خطا مواجه شد:\n{err}")
             
             
@@ -1423,7 +1418,7 @@ class BookCostCalculator(QMainWindow):
         try:
             self.cursor.execute(
                 "SELECT target_cost_field, default_cost FROM default_cost_mappings "
-                "WHERE category_name = %s AND item_value = %s",
+                "WHERE category_name = ? AND item_value = ?",
                 (category_name, selected_text)
             )
             mapping = self.cursor.fetchone()
@@ -1432,7 +1427,7 @@ class BookCostCalculator(QMainWindow):
                 cost_value = mapping['default_cost']
                 if cost_field in self.cost_inputs:
                     self.cost_inputs[cost_field].setValue(cost_value)
-        except mysql.connector.Error as err:
+        except sqlite3.Error as err:
             print("Error applying default cost:", err)
             
             
@@ -1468,7 +1463,7 @@ class BookCostCalculator(QMainWindow):
             if not selected_text:
                 continue
 
-            query_conditions.append("(category_name = %s AND item_value = %s)")
+            query_conditions.append("(category_name = ? AND item_value = ?)")
             query_params.extend([category, selected_text])
             requested_items.append((category, selected_text))
 
@@ -1490,7 +1485,7 @@ class BookCostCalculator(QMainWindow):
                         self.cost_inputs[cost_field].setValue(cost_value)
                         updated_count += 1
 
-            except mysql.connector.Error as err:
+            except sqlite3.Error as err:
                 print("Error importing default:", err)
 
         if updated_count > 0:

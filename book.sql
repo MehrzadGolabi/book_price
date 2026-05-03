@@ -1,9 +1,6 @@
-CREATE DATABASE IF NOT EXISTS book_publishing CHARACTER SET utf8mb4 COLLATE utf8mb4_persian_ci;
-USE book_publishing;
-
 -- Table to store the dynamic "Types" (نوع)
 CREATE TABLE IF NOT EXISTS categories (
-    id INT AUTO_INCREMENT PRIMARY KEY,
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
     category_name VARCHAR(100) NOT NULL, -- e.g., "نوع کاغذ متن"
     item_value VARCHAR(255) NOT NULL,    -- e.g., "ايندربورد 200 گرم"
     UNIQUE(category_name, item_value)
@@ -11,7 +8,7 @@ CREATE TABLE IF NOT EXISTS categories (
 
 -- Table to store the paper preprocessing calculations
 CREATE TABLE IF NOT EXISTS paper_calculations (
-    id INT AUTO_INCREMENT PRIMARY KEY,
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
     paper_type VARCHAR(255) NOT NULL,
     formula_type VARCHAR(100) NOT NULL,
     weight DECIMAL(15,2),
@@ -25,7 +22,7 @@ CREATE TABLE IF NOT EXISTS paper_calculations (
 
 -- Table to store the main project details
 CREATE TABLE IF NOT EXISTS projects (
-    id INT AUTO_INCREMENT PRIMARY KEY,
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
     title VARCHAR(255) NOT NULL,
     subtitle VARCHAR(255),
     creation_date DATE NOT NULL,
