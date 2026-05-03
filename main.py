@@ -749,7 +749,7 @@ class BookCostCalculator(QMainWindow):
         search_text = self.search_input.text().strip()
         self.load_projects(search_text if search_text else None)
         
-    def open_project(self):
+    def open_project(self, index):
         """Called when a row is double‑clicked."""
         row = index.row()
         project_id_item = self.project_table.item(row, 0)
