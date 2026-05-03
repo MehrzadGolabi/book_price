@@ -11,7 +11,6 @@ from PySide6.QtGui import QAction, QFontDatabase, QShortcut, QKeySequence
 import mysql.connector
 # Matplotlib imports
 import matplotlib
-from numpy import dtype
 matplotlib.use('QtAgg')
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
