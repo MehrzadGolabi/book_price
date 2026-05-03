@@ -69,33 +69,96 @@ class BookCostCalculator(QMainWindow):
         self.init_ui()
 
     def connect_db(self):
-        try:
-            self.db_conn = sqlite3.connect(DB_CONFIG['filename'])
-            self.db_conn.row_factory = sqlite3.Row
-            self.cursor = self.db_conn.cursor()
+            try:
+                self.db_conn = sqlite3.connect(DB_CONFIG['filename'])
+                self.db_conn.row_factory = sqlite3.Row
+                self.cursor = self.db_conn.cursor()
 
-            # Initialize tables that might not exist in older setups
-            self.cursor.execute("""
-                CREATE TABLE IF NOT EXISTS paper_calculations (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    paper_type VARCHAR(255) NOT NULL,
-                    formula_type VARCHAR(100) NOT NULL,
-                    weight DECIMAL(15,2),
-                    height DECIMAL(15,2),
-                    length DECIMAL(15,2),
-                    bundle_count INT,
-                    bundle_weight DECIMAL(15,2),
-                    price DECIMAL(15,2),
-                    unit_price DECIMAL(15,2)
+                # Create ALL necessary tables for the standalone SQLite app
+                self.cursor.executescript("""
+                    CREATE TABLE IF NOT EXISTS categories (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        category_name TEXT NOT NULL,
+                        item_value TEXT NOT NULL,
+                        UNIQUE(category_name, item_value)
+                    );
+
+                    CREATE TABLE IF NOT EXISTS paper_calculations (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        paper_type TEXT NOT NULL,
+                        formula_type TEXT NOT NULL,
+                        weight REAL,
+                        height REAL,
+                        length REAL,
+                        bundle_count INTEGER,
+                        bundle_weight REAL,
+                        price REAL,
+                        unit_price REAL
+                    );
+
+                    CREATE TABLE IF NOT EXISTS projects (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        title TEXT NOT NULL,
+                        subtitle TEXT,
+                        creation_date DATE NOT NULL,
+                        qate TEXT,
+                        tiraj INTEGER NOT NULL,
+                        royalty_percent REAL,
+                        total_cost REAL,
+                        single_book_cost REAL
+                    );
+
+                    CREATE TABLE IF NOT EXISTS project_details (
+                        project_id INTEGER PRIMARY KEY,
+                        noeh_kaghaz_matn TEXT,
+                        noeh_chap_matn TEXT,
+                        noeh_rang_matn TEXT,
+                        noeh_zink_matn TEXT,
+                        noeh_kaghaz_jeld TEXT,
+                        noeh_chap_jeld TEXT,
+                        noeh_rang_jeld TEXT,
+                        noeh_zink_jeld TEXT,
+                        hazineh_talif REAL DEFAULT 0,
+                        hazineh_tarjomeh REAL DEFAULT 0,
+                        hazineh_tasvir REAL DEFAULT 0,
+                        hazineh_virayesh REAL DEFAULT 0,
+                        hazineh_tarahi_jeld REAL DEFAULT 0,
+                        hazineh_modiriat_atelieh REAL DEFAULT 0,
+                        hazineh_zink REAL DEFAULT 0,
+                        hazineh_chap_matn REAL DEFAULT 0,
+                        hazineh_chap_jeld REAL DEFAULT 0,
+                        hazineh_kaghaz_matn REAL DEFAULT 0,
+                        hazineh_kaghaz_jeld REAL DEFAULT 0,
+                        hazineh_rokesh_salfon REAL DEFAULT 0,
+                        hazineh_moghava_maghzi REAL DEFAULT 0,
+                        hazineh_ghaleb_letterpress REAL DEFAULT 0,
+                        hazineh_ghaleb_diecut REAL DEFAULT 0,
+                        hazineh_khat_ta REAL DEFAULT 0,
+                        hazineh_malzomat REAL DEFAULT 0,
+                        hazineh_jeldsazi REAL DEFAULT 0,
+                        hazineh_sahafi REAL DEFAULT 0,
+                        hazineh_boresh_bastebandi REAL DEFAULT 0,
+                        hazineh_haml_naghl REAL DEFAULT 0,
+                        hazineh_montaj REAL DEFAULT 0,
+                        FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+                    );
+
+                    CREATE TABLE IF NOT EXISTS default_cost_mappings (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        category_name TEXT NOT NULL,
+                        item_value TEXT NOT NULL,
+                        target_cost_field TEXT NOT NULL,
+                        default_cost REAL NOT NULL
+                    );
+                """)
+                self.db_conn.commit()
+            except sqlite3.Error as err:
+                QMessageBox.critical(
+                    self, "خطای دیتابیس",
+                    f"ارتباط با دیتابیس برقرار نشد.\nلطفاً فایل config.ini را بررسی کنید.\n\n{err}"
                 )
-            """)
-            self.db_conn.commit()
-        except sqlite3.Error as err:
-            QMessageBox.critical(
-                self, "خطای دیتابیس",
-                f"ارتباط با دیتابیس برقرار نشد.\nلطفاً فایل config.ini را بررسی کنید.\n\n{err}"
-            )
-            sys.exit(1)
+                sys.exit(1)
+
 
     def init_ui(self):
         # 1. Setup Toolbar
