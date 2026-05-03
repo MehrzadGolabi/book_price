@@ -12,7 +12,6 @@ import sqlite3
 import configparser
 # Matplotlib imports
 import matplotlib
-from numpy import dtype
 matplotlib.use('QtAgg')
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
