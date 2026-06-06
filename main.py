@@ -56,6 +56,12 @@ def get_db_config():
 DB_CONFIG = get_db_config()
 
 class PaperPriceDialog(QDialog):
+    FORMULA_LABELS = (
+        "ابعاد، وزن و قیمت (هر واحد)",
+        "قیمت هر بند و تعداد در بند",
+        "دستی"
+    )
+
     def __init__(self, db_conn, target, parent=None):
         super().__init__(parent)
         self.db_conn = db_conn
@@ -108,11 +114,7 @@ class PaperPriceDialog(QDialog):
         calc_vbox = QVBoxLayout()
 
         self.formula_combo = QComboBox()
-        self.formula_combo.addItems([
-            "ابعاد، وزن و قیمت (هر واحد)",
-            "قیمت هر بند و تعداد در بند",
-            "دستی"
-        ])
+        self.formula_combo.addItems(self.FORMULA_LABELS)
         self.formula_combo.currentIndexChanged.connect(self._update_formula_page)
         calc_vbox.addWidget(self.formula_combo)
 
@@ -246,8 +248,10 @@ class PaperPriceDialog(QDialog):
         if row < 0:
             QMessageBox.warning(self, "توجه", "لطفاً یک ردیف را انتخاب کنید.")
             return
-        text = self.lib_table.item(row, 3).text().replace(",", "")
-        self.result_value = float(text)
+        item = self.lib_table.item(row, 3)
+        if item is None:
+            return
+        self.result_value = float(item.text().replace(",", ""))
         self.accept()
 
     def _apply_calculated(self):
@@ -262,11 +266,6 @@ class PaperPriceDialog(QDialog):
 
     def _save_to_library(self, name):
         idx = self.formula_combo.currentIndex()
-        formulas = [
-            "ابعاد، وزن و قیمت (هر واحد)",
-            "قیمت هر بند و تعداد در بند",
-            "دستی"
-        ]
         w = self.dlg_weight_spin.value() if idx == 0 else 0
         h = self.dlg_height_spin.value() if idx == 0 else 0
         l = self.dlg_length_spin.value() if idx == 0 else 0
@@ -278,7 +277,7 @@ class PaperPriceDialog(QDialog):
                 "INSERT INTO paper_calculations "
                 "(paper_type, formula_type, weight, height, length, bundle_count, bundle_weight, price, unit_price) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (name, formulas[idx], w, h, l, count, 0, prices[idx], self.result_value)
+                (name, self.FORMULA_LABELS[idx], w, h, l, count, 0, prices[idx], self.result_value)
             )
             self.db_conn.commit()
             if hasattr(self.parent(), 'load_paper_calculations'):
