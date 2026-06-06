@@ -392,9 +392,43 @@ class BookCostCalculator(QMainWindow):
                         target_cost_field TEXT NOT NULL,
                         default_cost REAL NOT NULL
                     );
+
+                    CREATE TABLE IF NOT EXISTS zinc_prices (
+                        zinc_size TEXT PRIMARY KEY,
+                        unit_price REAL DEFAULT 0
+                    );
                 """)
 
                 self.db_conn.commit()
+
+                zinc_sizes = [
+                    "زینک 2 ورقی", "زینک 2.5 ورقی", "زینک 3.5 ورقی",
+                    "زینک 4.5 ورقی", "زینک GTO"
+                ]
+                for zs in zinc_sizes:
+                    self.cursor.execute(
+                        "INSERT OR IGNORE INTO zinc_prices (zinc_size, unit_price) VALUES (?, 0)",
+                        (zs,)
+                    )
+                self.db_conn.commit()
+
+                new_cols = [
+                    ("waste_percent", "REAL DEFAULT 5"),
+                    ("book_width", "REAL"),
+                    ("book_height", "REAL"),
+                    ("paper_size", "TEXT"),
+                    ("orientation", "TEXT"),
+                    ("pages_per_sheet", "INTEGER"),
+                ]
+                for col_name, col_def in new_cols:
+                    try:
+                        self.cursor.execute(
+                            f"ALTER TABLE project_details ADD COLUMN {col_name} {col_def}"
+                        )
+                        self.db_conn.commit()
+                    except sqlite3.OperationalError:
+                        pass  # column already exists
+
             except sqlite3.Error as err:
                 QMessageBox.critical(
                     self, "خطای دیتابیس",
