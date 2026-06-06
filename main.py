@@ -651,6 +651,9 @@ class BookCostCalculator(QMainWindow):
             calc_layout.addRow("", self.double_sided_matn_chk)
             calc_layout.addRow("تعداد رنگ متن:", self.color_matn_combo)
             calc_layout.addRow("ابعاد زینک متن:", self.zinc_size_matn_combo)
+            self.zinc_price_matn_label = QLabel("—")
+            self.zinc_price_matn_label.setAlignment(Qt.AlignCenter)
+            calc_layout.addRow("قیمت واحد زینک متن:", self.zinc_price_matn_label)
             matn_price_row = QWidget()
             matn_price_layout = QHBoxLayout(matn_price_row)
             matn_price_layout.setContentsMargins(0, 0, 0, 0)
@@ -681,6 +684,9 @@ class BookCostCalculator(QMainWindow):
             calc_layout.addRow("", self.double_sided_jeld_chk)
             calc_layout.addRow("تعداد رنگ جلد:", self.color_jeld_combo)
             calc_layout.addRow("ابعاد زینک جلد:", self.zinc_size_jeld_combo)
+            self.zinc_price_jeld_label = QLabel("—")
+            self.zinc_price_jeld_label.setAlignment(Qt.AlignCenter)
+            calc_layout.addRow("قیمت واحد زینک جلد:", self.zinc_price_jeld_label)
             jeld_price_row = QWidget()
             jeld_price_layout = QHBoxLayout(jeld_price_row)
             jeld_price_layout.setContentsMargins(0, 0, 0, 0)
@@ -690,11 +696,6 @@ class BookCostCalculator(QMainWindow):
             btn_calc_jeld.clicked.connect(lambda: self.open_paper_price_dialog("jeld"))
             jeld_price_layout.addWidget(btn_calc_jeld)
             calc_layout.addRow("قیمت واحد هر ورق کاغذ جلد:", jeld_price_row)
-
-            self.unit_price_zinc_spin = QDoubleSpinBox()
-            self.unit_price_zinc_spin.setMaximum(9999999999.99)
-            self.unit_price_zinc_spin.setGroupSeparatorShown(True)
-            calc_layout.addRow("قیمت واحد هر زینک:", self.unit_price_zinc_spin)
 
             self.waste_percent_spin = QDoubleSpinBox()
             self.waste_percent_spin.setRange(0, 50)
@@ -766,6 +767,71 @@ class BookCostCalculator(QMainWindow):
             self.double_sided_jeld_chk.toggled.connect(self.auto_calculate_costs)
             self.color_matn_combo.currentIndexChanged.connect(self.auto_calculate_costs)
             self.color_jeld_combo.currentIndexChanged.connect(self.auto_calculate_costs)
+            self.zinc_size_matn_combo.currentIndexChanged.connect(self._update_zinc_price_labels)
+            self.zinc_size_matn_combo.currentIndexChanged.connect(self.auto_calculate_costs)
+            self.zinc_size_jeld_combo.currentIndexChanged.connect(self._update_zinc_price_labels)
+            self.zinc_size_jeld_combo.currentIndexChanged.connect(self.auto_calculate_costs)
+            self.tabs.currentChanged.connect(lambda idx: self._update_zinc_price_labels() if idx == 1 else None)
+            self._update_zinc_price_labels()
+
+    def _get_zinc_price(self, zinc_size):
+        try:
+            self.cursor.execute(
+                "SELECT unit_price FROM zinc_prices WHERE zinc_size = ?", (zinc_size,)
+            )
+            row = self.cursor.fetchone()
+            return row['unit_price'] if row else 0.0
+        except sqlite3.Error:
+            return 0.0
+
+    def _update_zinc_price_labels(self):
+        for label, combo in [
+            (self.zinc_price_matn_label, self.zinc_size_matn_combo),
+            (self.zinc_price_jeld_label, self.zinc_size_jeld_combo),
+        ]:
+            price = self._get_zinc_price(combo.currentText())
+            if price > 0:
+                label.setText(f"{price:,.0f} تومان")
+                label.setStyleSheet("color: #4caf50;")
+            else:
+                label.setText("⚠ قیمت تنظیم نشده")
+                label.setStyleSheet("color: #e57373;")
+
+    def load_zinc_prices_table(self):
+        zinc_sizes = ["زینک 2 ورقی", "زینک 2.5 ورقی", "زینک 3.5 ورقی", "زینک 4.5 ورقی", "زینک GTO"]
+        self.zinc_prices_table.setRowCount(len(zinc_sizes))
+        for i, zs in enumerate(zinc_sizes):
+            name_item = QTableWidgetItem(zs)
+            name_item.setFlags(name_item.flags() & ~Qt.ItemIsEditable)
+            self.zinc_prices_table.setItem(i, 0, name_item)
+            price = self._get_zinc_price(zs)
+            spin = QDoubleSpinBox()
+            spin.setMaximum(9999999999.99)
+            spin.setGroupSeparatorShown(True)
+            spin.setDecimals(0)
+            spin.setValue(price)
+            self.zinc_prices_table.setCellWidget(i, 1, spin)
+            save_btn = QPushButton("ذخیره")
+            save_btn.setStyleSheet("background-color: #2a6496; color: white; padding: 2px 8px; font-size: 11px;")
+            save_btn.clicked.connect(lambda checked, row=i, size=zs: self.save_zinc_price(row, size))
+            self.zinc_prices_table.setCellWidget(i, 2, save_btn)
+
+    def save_zinc_price(self, row, zinc_size):
+        spin = self.zinc_prices_table.cellWidget(row, 1)
+        if spin is None:
+            return
+        price = spin.value()
+        try:
+            self.cursor.execute(
+                "INSERT OR REPLACE INTO zinc_prices (zinc_size, unit_price) VALUES (?, ?)",
+                (zinc_size, price)
+            )
+            self.db_conn.commit()
+            self._update_zinc_price_labels()
+            self.auto_calculate_costs()
+            QMessageBox.information(self, "ذخیره شد", f"قیمت {zinc_size} ذخیره شد.")
+        except sqlite3.Error as err:
+            QMessageBox.critical(self, "خطا", f"ذخیره قیمت زینک با خطا مواجه شد:\n{err}")
 
     def auto_calculate_costs(self, *args):
         # Text colors
@@ -794,10 +860,12 @@ class BookCostCalculator(QMainWindow):
         calculated_paper_cost_jeld = total_paper_jeld * self.unit_price_paper_jeld_spin.value()
         self.cost_inputs['هزینه کاغذ جلد'].setValue(calculated_paper_cost_jeld)
 
-        # Zinc
+        # Zinc — per-size pricing
         total_zincs_matn = self.form_matn_spin.value() * text_colors
         total_zincs_jeld = self.form_jeld_spin.value() * cover_colors
-        total_zinc_cost = (total_zincs_matn + total_zincs_jeld) * self.unit_price_zinc_spin.value()
+        zinc_price_matn = self._get_zinc_price(self.zinc_size_matn_combo.currentText())
+        zinc_price_jeld = self._get_zinc_price(self.zinc_size_jeld_combo.currentText())
+        total_zinc_cost = (total_zincs_matn * zinc_price_matn) + (total_zincs_jeld * zinc_price_jeld)
         self.cost_inputs['هزینه زینک'].setValue(total_zinc_cost)
 
     def open_paper_price_dialog(self, target):
@@ -1819,6 +1887,21 @@ class BookCostCalculator(QMainWindow):
     def setup_default_costs_tab(self):
         layout = QVBoxLayout()
 
+        # ── Zinc Prices Group ──────────────────────────────────────────────
+        zinc_group = QGroupBox("قیمت زینک‌ها")
+        zinc_layout = QVBoxLayout()
+        self.zinc_prices_table = QTableWidget(5, 3)
+        self.zinc_prices_table.setHorizontalHeaderLabels(["اندازه زینک", "قیمت واحد (تومان)", ""])
+        self.zinc_prices_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
+        self.zinc_prices_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
+        self.zinc_prices_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        self.zinc_prices_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.zinc_prices_table.verticalHeader().setVisible(False)
+        zinc_layout.addWidget(self.zinc_prices_table)
+        zinc_group.setLayout(zinc_layout)
+        layout.addWidget(zinc_group)
+
+
         # Form to add / edit a mapping
         form = QFormLayout()
 
@@ -1877,6 +1960,7 @@ class BookCostCalculator(QMainWindow):
         # Initial load
         self.populate_default_value_combo(self.def_cat_combo.currentText())
         self.load_default_costs_table()
+        self.load_zinc_prices_table()
 
     def populate_default_value_combo(self, category_name):
         """Fills the value combo with existing items from the chosen category."""
