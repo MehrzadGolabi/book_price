@@ -971,8 +971,15 @@ class BookCostCalculator(QMainWindow):
             scroll_layout.addWidget(calc_btn)
             scroll_area.setWidget(scroll_content)
             
-            main_layout = QVBoxLayout(self.tab_details)
-            main_layout.addWidget(scroll_area)
+            self.layout_widget = PrintLayoutWidget()
+            self.layout_widget.setFixedWidth(240)
+
+            outer_layout = QHBoxLayout(self.tab_details)
+            outer_layout.setContentsMargins(0, 0, 0, 0)
+            outer_layout.setSpacing(0)
+            self.tab_details.setLayoutDirection(Qt.LeftToRight)
+            outer_layout.addWidget(scroll_area)
+            outer_layout.addWidget(self.layout_widget)
 
             # --- Signal Connections for Intelligent Auto-Calc ---
             self.inputs['قطع'].currentIndexChanged.connect(self.suggest_optimal_layout)
@@ -1000,8 +1007,16 @@ class BookCostCalculator(QMainWindow):
             self.book_width_spin.valueChanged.connect(self.suggest_optimal_layout)
             self.book_height_spin.valueChanged.connect(self.suggest_optimal_layout)
             self.paper_size_combo.currentIndexChanged.connect(self.suggest_optimal_layout)
+            self.inputs['قطع'].currentIndexChanged.connect(self._refresh_layout_widget)
+            self.total_pages_spin.valueChanged.connect(self._refresh_layout_widget)
+            self.paper_size_combo.currentIndexChanged.connect(self._refresh_layout_widget)
+            self.zinc_size_matn_combo.currentIndexChanged.connect(self._refresh_layout_widget)
+            self.zinc_size_jeld_combo.currentIndexChanged.connect(self._refresh_layout_widget)
+            self.book_width_spin.valueChanged.connect(self._refresh_layout_widget)
+            self.book_height_spin.valueChanged.connect(self._refresh_layout_widget)
             self._update_zinc_price_labels()
             self.suggest_optimal_layout()
+            self._refresh_layout_widget()
 
     def _get_zinc_price(self, zinc_size):
         try:
@@ -1025,6 +1040,41 @@ class BookCostCalculator(QMainWindow):
             else:
                 label.setText("⚠ قیمت تنظیم نشده")
                 label.setStyleSheet("color: #e57373;")
+
+    def _refresh_layout_widget(self):
+        qate = self.inputs['قطع'].currentText()
+        specs = self.OPTIMAL_SPECS.get(qate, {})
+
+        paper_str = self.paper_size_combo.currentText().replace('×', 'x')
+        try:
+            paper_w, paper_h = map(float, paper_str.split('x'))
+        except ValueError:
+            return
+
+        if specs.get('pages_per_sheet') is None and self.book_dims_row_widget.isVisible():
+            book_w = self.book_width_spin.value()
+            book_h = self.book_height_spin.value()
+        else:
+            dims = PrintLayoutWidget.BOOK_PAGE_DIMS.get(qate, (None, None))
+            book_w = dims[0] if dims[0] else paper_w / 4
+            book_h = dims[1] if dims[1] else paper_h / 4
+
+        if specs.get('pages_per_sheet') is not None:
+            pages_per_sheet = specs['pages_per_sheet']
+        elif book_w > 0 and book_h > 0:
+            _, pages_per_sheet = self._compute_optimal_orientation(
+                book_w, book_h, paper_w, paper_h
+            )
+        else:
+            pages_per_sheet = 0
+
+        self.layout_widget.update_layout(
+            paper_w, paper_h,
+            book_w, book_h,
+            pages_per_sheet,
+            self.zinc_size_matn_combo.currentText(),
+            self.zinc_size_jeld_combo.currentText(),
+        )
 
     def load_zinc_prices_table(self):
         zinc_sizes = ["زینک 2 ورقی", "زینک 2.5 ورقی", "زینک 3.5 ورقی", "زینک 4.5 ورقی", "زینک GTO"]
