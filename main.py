@@ -696,6 +696,13 @@ class BookCostCalculator(QMainWindow):
             self.unit_price_zinc_spin.setGroupSeparatorShown(True)
             calc_layout.addRow("قیمت واحد هر زینک:", self.unit_price_zinc_spin)
 
+            self.waste_percent_spin = QDoubleSpinBox()
+            self.waste_percent_spin.setRange(0, 50)
+            self.waste_percent_spin.setDecimals(1)
+            self.waste_percent_spin.setValue(5.0)
+            self.waste_percent_spin.setSuffix(" %")
+            calc_layout.addRow("ضایعات کاغذ:", self.waste_percent_spin)
+
             self.calc_group.setLayout(calc_layout)
             form_layout.addRow(self.calc_group)
 
@@ -750,7 +757,7 @@ class BookCostCalculator(QMainWindow):
             widgets_to_connect = [
                 self.form_matn_spin, self.unit_price_paper_matn_spin,
                 self.form_jeld_spin, self.unit_price_paper_jeld_spin,
-                self.unit_price_zinc_spin, self.inputs['تیراژ']
+                self.inputs['تیراژ'], self.waste_percent_spin
             ]
             for w in widgets_to_connect:
                 w.valueChanged.connect(self.auto_calculate_costs)
@@ -774,13 +781,16 @@ class BookCostCalculator(QMainWindow):
         # Tiraj
         tiraj = self.inputs['تیراژ'].value()
 
+        # Waste multiplier
+        waste = 1 + self.waste_percent_spin.value() / 100
+
         # Paper Text
-        total_paper_matn = (self.form_matn_spin.value() / sides_matn) * tiraj
+        total_paper_matn = (self.form_matn_spin.value() / sides_matn) * tiraj * waste
         calculated_paper_cost_matn = total_paper_matn * self.unit_price_paper_matn_spin.value()
         self.cost_inputs['هزینه کاغذ متن'].setValue(calculated_paper_cost_matn)
 
         # Paper Cover
-        total_paper_jeld = (self.form_jeld_spin.value() / sides_jeld) * tiraj
+        total_paper_jeld = (self.form_jeld_spin.value() / sides_jeld) * tiraj * waste
         calculated_paper_cost_jeld = total_paper_jeld * self.unit_price_paper_jeld_spin.value()
         self.cost_inputs['هزینه کاغذ جلد'].setValue(calculated_paper_cost_jeld)
 
@@ -951,6 +961,7 @@ class BookCostCalculator(QMainWindow):
                         form_matn = ?, is_double_sided_matn = ?, color_count_matn = ?, zinc_size_matn = ?,
                         form_jeld = ?, is_double_sided_jeld = ?, color_count_jeld = ?, zinc_size_jeld = ?,
                         unit_price_paper_matn = ?, unit_price_paper_jeld = ?, unit_price_zinc = ?,
+                        waste_percent = ?,
                         hazineh_talif = ?, hazineh_tarjomeh = ?, hazineh_tasvir = ?, hazineh_virayesh = ?,
                         hazineh_tarahi_jeld = ?, hazineh_modiriat_atelieh = ?, hazineh_zink = ?,
                         hazineh_chap_matn = ?, hazineh_chap_jeld = ?, hazineh_kaghaz_matn = ?,
@@ -969,7 +980,8 @@ class BookCostCalculator(QMainWindow):
                     self.form_jeld_spin.value(), int(self.double_sided_jeld_chk.isChecked()),
                     1 if self.color_jeld_combo.currentIndex() == 0 else (2 if self.color_jeld_combo.currentIndex() == 1 else 4),
                     self.zinc_size_jeld_combo.currentText(),
-                    self.unit_price_paper_matn_spin.value(), self.unit_price_paper_jeld_spin.value(), self.unit_price_zinc_spin.value(),
+                    self.unit_price_paper_matn_spin.value(), self.unit_price_paper_jeld_spin.value(), 0,
+                    self.waste_percent_spin.value(),
                     self.cost_inputs['هزینه تالیف'].value(), self.cost_inputs['هزینه ترجمه'].value(),
                     self.cost_inputs['هزینه تصویرگری'].value(), self.cost_inputs['هزینه ویرایش'].value(),
                     self.cost_inputs['هزینه طراحی جلد'].value(), self.cost_inputs['هزینه مديريت آتليه'].value(),
@@ -1012,7 +1024,7 @@ class BookCostCalculator(QMainWindow):
                         noeh_kaghaz_jeld, noeh_chap_jeld, noeh_rang_jeld, noeh_zink_jeld,
                         form_matn, is_double_sided_matn, color_count_matn, zinc_size_matn,
                         form_jeld, is_double_sided_jeld, color_count_jeld, zinc_size_jeld,
-                        unit_price_paper_matn, unit_price_paper_jeld, unit_price_zinc,
+                        unit_price_paper_matn, unit_price_paper_jeld, unit_price_zinc, waste_percent,
                         hazineh_talif, hazineh_tarjomeh, hazineh_tasvir, hazineh_virayesh,
                         hazineh_tarahi_jeld, hazineh_modiriat_atelieh, hazineh_zink, hazineh_chap_matn,
                         hazineh_chap_jeld, hazineh_kaghaz_matn, hazineh_kaghaz_jeld, hazineh_rokesh_salfon,
@@ -1021,7 +1033,7 @@ class BookCostCalculator(QMainWindow):
                         hazineh_boresh_bastebandi, hazineh_haml_naghl, hazineh_montaj
                     ) VALUES (
                         ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                         ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
                     )
                 """
@@ -1035,7 +1047,8 @@ class BookCostCalculator(QMainWindow):
                     self.form_jeld_spin.value(), int(self.double_sided_jeld_chk.isChecked()),
                     1 if self.color_jeld_combo.currentIndex() == 0 else (2 if self.color_jeld_combo.currentIndex() == 1 else 4),
                     self.zinc_size_jeld_combo.currentText(),
-                    self.unit_price_paper_matn_spin.value(), self.unit_price_paper_jeld_spin.value(), self.unit_price_zinc_spin.value(),
+                    self.unit_price_paper_matn_spin.value(), self.unit_price_paper_jeld_spin.value(), 0,
+                    self.waste_percent_spin.value(),
                     self.cost_inputs['هزینه تالیف'].value(), self.cost_inputs['هزینه ترجمه'].value(),
                     self.cost_inputs['هزینه تصویرگری'].value(), self.cost_inputs['هزینه ویرایش'].value(),
                     self.cost_inputs['هزینه طراحی جلد'].value(), self.cost_inputs['هزینه مديريت آتليه'].value(),
@@ -1350,8 +1363,10 @@ class BookCostCalculator(QMainWindow):
                 if 'unit_price_paper_jeld' in details and details['unit_price_paper_jeld'] is not None:
                     self.unit_price_paper_jeld_spin.setValue(details['unit_price_paper_jeld'])
 
-                if 'unit_price_zinc' in details and details['unit_price_zinc'] is not None:
-                    self.unit_price_zinc_spin.setValue(details['unit_price_zinc'])
+                if 'waste_percent' in details and details['waste_percent'] is not None:
+                    self.waste_percent_spin.setValue(float(details['waste_percent']))
+                else:
+                    self.waste_percent_spin.setValue(5.0)
 
                 cost_mapping = {
                     'هزینه تالیف': 'hazineh_talif',
@@ -1435,7 +1450,7 @@ class BookCostCalculator(QMainWindow):
         self.color_jeld_combo.setCurrentIndex(2)
         self.zinc_size_jeld_combo.setCurrentIndex(0)
         self.unit_price_paper_jeld_spin.setValue(0.0)
-        self.unit_price_zinc_spin.setValue(0.0)
+        self.waste_percent_spin.setValue(5.0)
 
         # Clear costs
         for spin in self.cost_inputs.values():
