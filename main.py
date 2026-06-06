@@ -542,6 +542,7 @@ class BookCostCalculator(QMainWindow):
                         paper_size TEXT,
                         orientation TEXT,
                         pages_per_sheet INTEGER,
+                        total_pages INTEGER DEFAULT 0,
                         hazineh_talif REAL DEFAULT 0,
                         hazineh_tarjomeh REAL DEFAULT 0,
                         hazineh_tasvir REAL DEFAULT 0,
@@ -612,6 +613,7 @@ class BookCostCalculator(QMainWindow):
                     ("paper_size", "TEXT"),
                     ("orientation", "TEXT"),
                     ("pages_per_sheet", "INTEGER"),
+                    ("total_pages", "INTEGER DEFAULT 0"),
                 ]
                 for col_name, col_def in new_cols:
                     try:
@@ -1313,6 +1315,7 @@ class BookCostCalculator(QMainWindow):
                         unit_price_paper_matn = ?, unit_price_paper_jeld = ?, unit_price_zinc = ?,
                         waste_percent = ?,
                         book_width = ?, book_height = ?, paper_size = ?, orientation = ?, pages_per_sheet = ?,
+                        total_pages = ?,
                         hazineh_talif = ?, hazineh_tarjomeh = ?, hazineh_tasvir = ?, hazineh_virayesh = ?,
                         hazineh_tarahi_jeld = ?, hazineh_modiriat_atelieh = ?, hazineh_zink = ?,
                         hazineh_chap_matn = ?, hazineh_chap_jeld = ?, hazineh_kaghaz_matn = ?,
@@ -1338,6 +1341,7 @@ class BookCostCalculator(QMainWindow):
                     self.paper_size_combo.currentText().replace("×", "x"),
                     self.orientation_label.text() or None,
                     self.form_matn_spin.value(),
+                    self.total_pages_spin.value(),
                     self.cost_inputs['هزینه تالیف'].value(), self.cost_inputs['هزینه ترجمه'].value(),
                     self.cost_inputs['هزینه تصویرگری'].value(), self.cost_inputs['هزینه ویرایش'].value(),
                     self.cost_inputs['هزینه طراحی جلد'].value(), self.cost_inputs['هزینه مديريت آتليه'].value(),
@@ -1382,6 +1386,7 @@ class BookCostCalculator(QMainWindow):
                         form_jeld, is_double_sided_jeld, color_count_jeld, zinc_size_jeld,
                         unit_price_paper_matn, unit_price_paper_jeld, unit_price_zinc, waste_percent,
                         book_width, book_height, paper_size, orientation, pages_per_sheet,
+                        total_pages,
                         hazineh_talif, hazineh_tarjomeh, hazineh_tasvir, hazineh_virayesh,
                         hazineh_tarahi_jeld, hazineh_modiriat_atelieh, hazineh_zink, hazineh_chap_matn,
                         hazineh_chap_jeld, hazineh_kaghaz_matn, hazineh_kaghaz_jeld, hazineh_rokesh_salfon,
@@ -1391,7 +1396,7 @@ class BookCostCalculator(QMainWindow):
                     ) VALUES (
                         ?, ?, ?, ?, ?, ?, ?, ?, ?,
                         ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                        ?, ?, ?, ?, ?,
+                        ?, ?, ?, ?, ?, ?,
                         ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
                     )
                 """
@@ -1412,6 +1417,7 @@ class BookCostCalculator(QMainWindow):
                     self.paper_size_combo.currentText().replace("×", "x"),
                     self.orientation_label.text() or None,
                     self.form_matn_spin.value(),
+                    self.total_pages_spin.value(),
                     self.cost_inputs['هزینه تالیف'].value(), self.cost_inputs['هزینه ترجمه'].value(),
                     self.cost_inputs['هزینه تصویرگری'].value(), self.cost_inputs['هزینه ویرایش'].value(),
                     self.cost_inputs['هزینه طراحی جلد'].value(), self.cost_inputs['هزینه مديريت آتليه'].value(),
@@ -1731,6 +1737,9 @@ class BookCostCalculator(QMainWindow):
                 else:
                     self.waste_percent_spin.setValue(5.0)
 
+                if 'total_pages' in details.keys() and details['total_pages'] is not None:
+                    self.total_pages_spin.setValue(details['total_pages'] or 0)
+
                 if 'book_width' in details and details['book_width'] is not None:
                     self.book_width_spin.setValue(float(details['book_width']))
                 if 'book_height' in details and details['book_height'] is not None:
@@ -1825,6 +1834,8 @@ class BookCostCalculator(QMainWindow):
         self.book_height_spin.setValue(self.book_height_spin.minimum())
         self.paper_size_combo.setCurrentIndex(0)
         self.orientation_label.setText("")
+
+        self.total_pages_spin.setValue(0)
 
         # Clear costs
         for spin in self.cost_inputs.values():
