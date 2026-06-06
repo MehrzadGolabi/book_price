@@ -75,8 +75,8 @@ QPushButton:pressed {
     background: #1e40af;
 }
 QPushButton:disabled {
-    background: #2563eb;
-    color: #2563eb;
+    background: #94a3b8;
+    color: #e2e8f0;
 }
 
 /* Labels */
@@ -110,11 +110,11 @@ QLineEdit:focus:hover, QSpinBox:focus:hover, QDoubleSpinBox:focus:hover, QComboB
 /* Combo box */
 QComboBox::drop-down {
     subcontrol-origin: padding;
-    subcontrol-position: top right;
+    subcontrol-position: top left;
     width: 24px;
-    border-left: 1px solid #cbd5e1;
-    border-top-right-radius: 6px;
-    border-bottom-right-radius: 6px;
+    border-right: 1px solid #cbd5e1;
+    border-top-left-radius: 6px;
+    border-bottom-left-radius: 6px;
     background: #f8fafc;
 }
 QComboBox::drop-down:hover {
@@ -185,7 +185,7 @@ QCheckBox::indicator:hover {
 QCheckBox::indicator:checked {
     background: #2563eb;
     border-color: #2563eb;
-    image: none; /* Can be styled with an SVG checkmark if available, default usually renders ok if OS provides it, or we leave background as visual cue */
+    image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><polyline points='1.5,6 4.5,9 10.5,3' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/></svg>");
 }
 
 /* Scroll bars */
@@ -257,9 +257,71 @@ QGroupBox {
 }
 QGroupBox::title {
     subcontrol-origin: margin;
-    subcontrol-position: top left;
-    left: 10px;
+    subcontrol-position: top right;
+    right: 10px;
     padding: 0 5px;
     color: #2563eb;
 }
 QWidget#scroll_content { background-color: #f8fafc; }
+
+/* Read-only auto-calculated fields */
+QDoubleSpinBox:read-only {
+    background: #f1f5f9;
+    color: #475569;
+    border-color: #e2e8f0;
+}
+
+/* Info and result labels */
+QLabel#lbl_optimal_paper {
+    color: #2563eb;
+    font-weight: bold;
+    font-size: 11px;
+}
+QLabel#lbl_final_total {
+    font-size: 24px;
+    font-weight: bold;
+    color: #dc2626;
+}
+QLabel#lbl_single_price {
+    font-size: 24px;
+    font-weight: bold;
+    color: #16a34a;
+}
+
+/* Menu bar */
+QMenuBar {
+    background: #1e293b;
+    color: #f8fafc;
+}
+QMenuBar::item {
+    background: transparent;
+    padding: 6px 14px;
+    border-radius: 4px;
+}
+QMenuBar::item:selected {
+    background: #334155;
+}
+QMenu {
+    background: #ffffff;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    color: #0f172a;
+}
+QMenu::item {
+    padding: 8px 24px;
+}
+QMenu::item:selected {
+    background: #eff6ff;
+    color: #0f172a;
+}
+
+/* Status bar */
+QStatusBar {
+    background: #f8fafc;
+    border-top: 1px solid #e2e8f0;
+    color: #475569;
+}
+QStatusBar QLabel {
+    color: #475569;
+    padding: 2px 8px;
+}

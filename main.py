@@ -4,16 +4,18 @@ from datetime import datetime
 import jdatetime
 from PySide6.QtWidgets import (QApplication, QMainWindow, QScrollArea, QWidget, QVBoxLayout,
                                QTabWidget, QFormLayout, QLineEdit, QComboBox,
-                               QPushButton, QToolBar, QSpinBox, QDoubleSpinBox, 
-                               QLabel, QMessageBox, QHBoxLayout, QTableWidget, QHeaderView, QFileDialog, QCheckBox, QTableWidgetItem, QInputDialog, QDialog, QDialogButtonBox, QGroupBox)
+                               QPushButton, QToolBar, QSpinBox, QDoubleSpinBox,
+                               QLabel, QMessageBox, QHBoxLayout, QTableWidget, QHeaderView, QFileDialog, QCheckBox, QTableWidgetItem, QInputDialog, QDialog, QDialogButtonBox, QGroupBox,
+                               QStackedWidget)
 from PySide6.QtCore import Qt, QDate
 from PySide6.QtGui import QAction, QFontDatabase, QShortcut, QKeySequence
 import sqlite3
 import configparser
+import math
 # Matplotlib imports
 import matplotlib
-from numpy import dtype
 matplotlib.use('QtAgg')
+matplotlib.rcParams['font.family'] = ['Tahoma', 'Arial', 'DejaVu Sans']
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
 # Farsi Text Handling
@@ -26,19 +28,17 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.lib.units import cm
 def get_db_config():
-    """Reads database config from config.ini."""
-    # Default config
+    """Reads database and security config from config.ini."""
     default_config = {
-        'filename': 'book_publishing.db'
+        'filename': 'book_publishing.db',
+        'delete_password': 'admin'
     }
 
-    # Determine the path of config.ini (same directory as the executable/script)
     if getattr(sys, 'frozen', False):
-        # Running as a PyInstaller bundle
         app_dir = os.path.dirname(sys.executable)
     else:
         app_dir = os.path.dirname(os.path.abspath(__file__))
-    
+
     config_path = os.path.join(app_dir, 'config.ini')
 
     config = configparser.ConfigParser()
@@ -47,14 +47,25 @@ def get_db_config():
         if 'database' in config:
             if 'filename' in config['database']:
                 default_config['filename'] = config['database']['filename']
+        if 'security' in config:
+            if 'delete_password' in config['security']:
+                default_config['delete_password'] = config['security']['delete_password']
 
     return default_config
-
-DELETE_PASSWORD = "admin"
 
 DB_CONFIG = get_db_config()
 
 class BookCostCalculator(QMainWindow):
+    
+    OPTIMAL_SPECS = {
+        "وزیری": {"paper_size": "70x100", "pages_per_sheet": 32, "zinc": "زینک 3.5 ورقی"},
+        "رقعی": {"paper_size": "60x90", "pages_per_sheet": 32, "zinc": "زینک 2.5 ورقی"},
+        "رحلی کوچک": {"paper_size": "60x90", "pages_per_sheet": 16, "zinc": "زینک 2.5 ورقی"},
+        "رحلی بزرگ": {"paper_size": "70x100", "pages_per_sheet": 16, "zinc": "زینک 3.5 ورقی"},
+        "جیبی": {"paper_size": "60x90", "pages_per_sheet": 64, "zinc": "زینک 2.5 ورقی"},
+        "خشتی": {"paper_size": "50x70", "pages_per_sheet": 12, "zinc": "زینک 2 ورقی"},
+    }
+    
     def __init__(self):
         super().__init__()
         self.setWindowTitle("نرم افزار محاسبه و مدیریت هزینه‌های چاپ کتاب")
@@ -162,32 +173,52 @@ class BookCostCalculator(QMainWindow):
 
 
     def init_ui(self):
-        # 1. Setup Toolbar
+        # 1. Setup Menu Bar (Settings menu for advanced tabs)
+        settings_menu = self.menuBar().addMenu("تنظیمات")
+        paper_calc_menu_action = QAction("محاسبات پیش‌پردازش کاغذ", self)
+        paper_calc_menu_action.triggered.connect(lambda: self.tabs.setCurrentIndex(4))
+        settings_menu.addAction(paper_calc_menu_action)
+        defaults_menu_action = QAction("مدیریت قیمت‌های پایه", self)
+        defaults_menu_action.triggered.connect(lambda: self.tabs.setCurrentIndex(5))
+        settings_menu.addAction(defaults_menu_action)
+
+        # 2. Setup Toolbar (Open → Save | Import | Delete → Exit)
         toolbar = QToolBar("نوار ابزار اصلی")
         self.addToolBar(toolbar)
-        
-        save_action = QAction("ذخیره پروژه", self)
-        save_action.triggered.connect(self.save_project_to_db)
-        
-        exit_action = QAction("خروج", self)
-        exit_action.triggered.connect(self.close)
-        
+
         open_action = QAction("بازکردن پروژه", self)
+        open_action.setShortcut(QKeySequence("Ctrl+O"))
         open_action.triggered.connect(self.load_selected_project)
         toolbar.addAction(open_action)
-        
-        delete_action = QAction("حذف پروژه", self)
-        delete_action.triggered.connect(self.delete_project)
-        toolbar.addAction(delete_action)
-        
+
+        save_action = QAction("ذخیره پروژه", self)
+        save_action.setShortcut(QKeySequence("Ctrl+S"))
+        save_action.triggered.connect(self.save_project_to_db)
+        toolbar.addAction(save_action)
+
+        toolbar.addSeparator()
+
         import_defaults_action = QAction("دریافت قیمت‌های پایه", self)
         import_defaults_action.triggered.connect(self.import_default_prices)
         toolbar.addAction(import_defaults_action)
-        
-        toolbar.addAction(save_action)
+
+        toolbar.addSeparator()
+
+        delete_action = QAction("حذف پروژه", self)
+        delete_action.triggered.connect(self.delete_project)
+        toolbar.addAction(delete_action)
+
+        exit_action = QAction("خروج", self)
+        exit_action.triggered.connect(self.close)
         toolbar.addAction(exit_action)
 
-        # 2. Setup Tabs
+        # 3. Setup Status Bar
+        self.status_project_label = QLabel("پروژه‌ای باز نشده است")
+        self.status_save_label = QLabel("")
+        self.statusBar().addWidget(self.status_project_label)
+        self.statusBar().addPermanentWidget(self.status_save_label)
+
+        # 4. Setup Tabs
         self.tabs = QTabWidget()
         self.setCentralWidget(self.tabs)
 
@@ -233,11 +264,23 @@ class BookCostCalculator(QMainWindow):
         self.project_table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.project_table.doubleClicked.connect(self.open_project)  # ← open on double click
         
+        # Empty state page
+        empty_widget = QWidget()
+        empty_layout = QVBoxLayout(empty_widget)
+        empty_layout.setAlignment(Qt.AlignCenter)
+        empty_lbl = QLabel("هیچ پروژه‌ای یافت نشد\n\nبرای شروع، یک پروژه جدید ایجاد کنید.")
+        empty_lbl.setAlignment(Qt.AlignCenter)
+        empty_layout.addWidget(empty_lbl)
+
+        self.project_stack = QStackedWidget()
+        self.project_stack.addWidget(empty_widget)      # index 0: empty
+        self.project_stack.addWidget(self.project_table)  # index 1: table
+
         new_project_btn = QPushButton("ایجاد پروژه جدید")
-        new_project_btn.clicked.connect(self.new_project)   # was: lambda: self.tabs.setCurrentIndex(1)
-        
+        new_project_btn.clicked.connect(self.new_project)
+
         layout.addLayout(search_layout)
-        layout.addWidget(self.project_table)
+        layout.addWidget(self.project_stack)
         layout.addWidget(new_project_btn)
         self.tab_project.setLayout(layout)
         
@@ -245,184 +288,196 @@ class BookCostCalculator(QMainWindow):
         self.load_projects()
 
     def setup_details_tab(self):
-        scroll_area = QScrollArea()
-        scroll_area.setWidgetResizable(True)
-        
-        scroll_area.setLayoutDirection(Qt.LeftToRight)
+            scroll_area = QScrollArea()
+            scroll_area.setWidgetResizable(True)
+            scroll_area.setLayoutDirection(Qt.LeftToRight)
 
-        scroll_content = QWidget()
-        scroll_content.setObjectName("scroll_content")
-        scroll_content.setLayoutDirection(Qt.RightToLeft)
-        scroll_layout = QVBoxLayout(scroll_content)
+            scroll_content = QWidget()
+            scroll_content.setObjectName("scroll_content")
+            scroll_content.setLayoutDirection(Qt.RightToLeft)
+            scroll_layout = QVBoxLayout(scroll_content)
 
-        form_layout = QFormLayout()
+            form_layout = QFormLayout()
+            self.inputs = {}
 
-        # Dictionaries to hold our UI inputs so we can read them later
-        self.inputs = {}
-
-        # Basic Info
-        self.inputs['عنوان کتاب'] = QLineEdit()
-        self.inputs['عنوان کتاب'].setPlaceholderText("عنوان کتاب را وارد کنید")
-        self.inputs['زیر عنوان کتاب'] = QLineEdit()
-        self.inputs['زیر عنوان کتاب'].setPlaceholderText("(اختیاری)")
-        
-        # Auto-generating Date (Persian/Jalali)
-        self.inputs['تاریخ'] = QLineEdit()
-        
-        # دریافت تاریخ امروز به صورت شمسی و تبدیل آن به رشته
-        today_jalali = jdatetime.date.today()
-        self.inputs['تاریخ'].setText(today_jalali.strftime("%1400-%m-%d").replace("1400", str(today_jalali.year))) 
-        # یا به سادگی:
-        self.inputs['تاریخ'].setText(today_jalali.strftime("%Y/%m/%d"))
-        
-        self.inputs['تاریخ'].setReadOnly(True) # کاربر نباید به صورت دستی آن را تغییر دهد
-
-        self.inputs['قطع'] = QComboBox()
-        self.inputs['قطع'].addItems(["جیبی", "رقعی", "وزیری", "خشتی", "رحلی کوچک", "رحلی بزرگ", "بیاضی بزرگ", "سلطانی"])
-        
-        self.inputs['تیراژ'] = QSpinBox()
-        self.inputs['تیراژ'].setMaximum(100000)
-
-        # Dynamic "نوع" (Type) Categories
-        dynamic_types = ["نوع کاغذ متن", "نوع چاپ متن", "نوع رنگ متن", "نوع زینک متن", 
-                         "نوع کاغذ جلد", "نوع چاپ جلد", "نوع رنگ جلد", "نوع زینک جلد"]
-        
-        # Pre-fetch all categories from db to avoid N+1 queries
-        category_items = {dtype: [] for dtype in dynamic_types}
-        if self.db_conn:
-            try:
-                self.cursor.execute("SELECT category_name, item_value FROM categories")
-                for row in self.cursor.fetchall():
-                    if row['category_name'] in category_items:
-                        category_items[row['category_name']].append(row['item_value'])
-            except Exception as e:
-                print("Error pre-fetching categories:", e)
-
-        for dtype in dynamic_types:
-            combo = QComboBox()
-            combo.setEditable(True) # Allows user to type new values!
-            combo.setInsertPolicy(QComboBox.InsertAtBottom)
-            combo.addItems(category_items[dtype])
-            self.inputs[dtype] = combo
-
-        # Costs (هزینه)
-        cost_types = [
-            "هزینه تالیف", "هزینه ترجمه", "هزینه تصویرگری", "هزینه ویرایش", 
-            "هزینه طراحی جلد", "هزینه مديريت آتليه", "هزینه زینک", "هزینه چاپ متن", 
-            "هزینه چاپ جلد", "هزینه کاغذ متن", "هزینه کاغذ جلد", "هزینه روکش سلفون", 
-            "هزینه مقوای مغذی", "هزینه قالب لترپرس", "هزینه قالب دايكات", "هزینه خط تا", 
-            "هزینه ملزومات", "هزینه جلدسازی", "هزینه صحافی", "هزینه برش و بسته‌بندی", 
-            "هزینه حمل و نقل", "هزینه مونتاژ"
-        ]
-
-        self.cost_inputs = {}
-        for ctype in cost_types:
-            spin = QDoubleSpinBox()
-            spin.setMaximum(9999999999.99) # Handle large currency values
-            spin.setGroupSeparatorShown(True) # Adds commas to large numbers
-            spin.setDecimals(0)
-            spin.lineEdit().setAlignment(Qt.AlignCenter) 
-            self.cost_inputs[ctype] = spin
+            # --- Basic Info Section ---
+            self.inputs['عنوان کتاب'] = QLineEdit()
+            self.inputs['عنوان کتاب'].setPlaceholderText("عنوان کتاب را وارد کنید")
             
-        self.royalty_input = QDoubleSpinBox()
-        self.royalty_input.setSuffix(" %")
-        self.royalty_input.setMaximum(100.0)
-        self.royalty_input.setDecimals(0)
-        self.royalty_input.lineEdit().setAlignment(Qt.AlignCenter)
+            self.inputs['زیر عنوان کتاب'] = QLineEdit()
+            self.inputs['زیر عنوان کتاب'].setPlaceholderText("(اختیاری)")
+            
+            self.inputs['تاریخ'] = QLineEdit()
+            today_jalali = jdatetime.date.today()
+            self.inputs['تاریخ'].setText(today_jalali.strftime("%Y/%m/%d"))
+            self.inputs['تاریخ'].setReadOnly(True)
 
-        # Add to form layout
-        form_layout.addRow("عنوان کتاب:", self.inputs['عنوان کتاب'])
-        form_layout.addRow("تاریخ:", self.inputs['تاریخ'])
-        form_layout.addRow("تیراژ:", self.inputs['تیراژ'])
-        form_layout.addRow("---", QLabel("--- ویژگی‌ها ---"))
-        for k, v in self.inputs.items():
-            if k not in ['عنوان کتاب', 'تاریخ', 'تیراژ'] and isinstance(v, QComboBox):
-                form_layout.addRow(k + ":", v)
+            self.inputs['تیراژ'] = QSpinBox()
+            self.inputs['تیراژ'].setMaximum(100000)
+            self.inputs['تیراژ'].setGroupSeparatorShown(True)
+
+            # --- Book Size and Auto-Calculator Inputs ---
+            self.inputs['قطع'] = QComboBox()
+            # Populating based on the keys in your OPTIMAL_SPECS dictionary
+            self.inputs['قطع'].addItems(["وزیری", "رقعی", "رحلی کوچک", "رحلی بزرگ", "جیبی", "خشتی"])
+            
+            # Label to display optimization feedback
+            self.lbl_optimal_paper = QLabel("کاغذ بهینه: - | ورق مصرفی هر جلد: -")
+            self.lbl_optimal_paper.setObjectName("lbl_optimal_paper")
+
+            # New Input: Total Pages
+            self.total_pages_spin = QSpinBox()
+            self.total_pages_spin.setMaximum(5000)
+            self.total_pages_spin.setSuffix(" صفحه")
+            self.total_pages_spin.setAlignment(Qt.AlignCenter)
+
+            # Adding to form
+            form_layout.addRow("عنوان کتاب:", self.inputs['عنوان کتاب'])
+            form_layout.addRow("زیر عنوان:", self.inputs['زیر عنوان کتاب'])
+            form_layout.addRow("تاریخ:", self.inputs['تاریخ'])
+            form_layout.addRow("تیراژ:", self.inputs['تیراژ'])
+            form_layout.addRow("قطع کتاب:", self.inputs['قطع'])
+            form_layout.addRow("", self.lbl_optimal_paper) # Info label
+            form_layout.addRow("تعداد صفحات کتاب:", self.total_pages_spin)
+
+            # --- Dynamic Type Categories ---
+            dynamic_types = ["نوع کاغذ متن", "نوع چاپ متن", "نوع رنگ متن", "نوع زینک متن", 
+                            "نوع کاغذ جلد", "نوع چاپ جلد", "نوع رنگ جلد", "نوع زینک جلد"]
+            
+            category_items = {dtype: [] for dtype in dynamic_types}
+            if self.db_conn:
+                try:
+                    self.cursor.execute("SELECT category_name, item_value FROM categories")
+                    for row in self.cursor.fetchall():
+                        if row['category_name'] in category_items:
+                            category_items[row['category_name']].append(row['item_value'])
+                except Exception as e:
+                    print("Error pre-fetching categories:", e)
+
+            for dtype in dynamic_types:
+                combo = QComboBox()
+                combo.setEditable(True)
+                combo.setInsertPolicy(QComboBox.InsertAtBottom)
+                combo.addItems(category_items[dtype])
+                self.inputs[dtype] = combo
+                form_layout.addRow(dtype + ":", combo)
+
+            # --- Base Paper & Zinc Calculations GroupBox ---
+            self.calc_group = QGroupBox("محاسبات هوشمند کاغذ و زینک")
+            calc_layout = QFormLayout()
+
+            # Text Setup
+            self.form_matn_spin = QSpinBox()
+            self.form_matn_spin.setMaximum(1000)
+            self.double_sided_matn_chk = QCheckBox("چاپ دورو (متن)")
+            self.double_sided_matn_chk.setChecked(True)
+            
+            self.color_matn_combo = QComboBox()
+            self.color_matn_combo.addItems(["تک رنگ (1)", "دو رنگ (2)", "چهار رنگ (4)"])
+            
+            self.zinc_size_matn_combo = QComboBox()
+            self.zinc_size_matn_combo.addItems(["زینک 4.5 ورقی", "زینک 3.5 ورقی", "زینک 2.5 ورقی", "زینک 2 ورقی", "زینک GTO"])
+            
+            self.unit_price_paper_matn_spin = QDoubleSpinBox()
+            self.unit_price_paper_matn_spin.setMaximum(9999999999.99)
+            self.unit_price_paper_matn_spin.setGroupSeparatorShown(True)
+
+            calc_layout.addRow("تعداد فرم متن (خودکار):", self.form_matn_spin)
+            calc_layout.addRow("", self.double_sided_matn_chk)
+            calc_layout.addRow("تعداد رنگ متن:", self.color_matn_combo)
+            calc_layout.addRow("ابعاد زینک متن:", self.zinc_size_matn_combo)
+            calc_layout.addRow("قیمت واحد هر ورق کاغذ متن:", self.unit_price_paper_matn_spin)
+
+            # Cover Setup
+            self.form_jeld_spin = QSpinBox()
+            self.double_sided_jeld_chk = QCheckBox("چاپ دورو (جلد)")
+            self.double_sided_jeld_chk.setChecked(False)
+            
+            self.color_jeld_combo = QComboBox()
+            self.color_jeld_combo.addItems(["تک رنگ (1)", "دو رنگ (2)", "چهار رنگ (4)"])
+            self.color_jeld_combo.setCurrentIndex(2)
+            
+            self.zinc_size_jeld_combo = QComboBox()
+            self.zinc_size_jeld_combo.addItems(["زینک 4.5 ورقی", "زینک 3.5 ورقی", "زینک 2.5 ورقی", "زینک 2 ورقی", "زینک GTO"])
+            
+            self.unit_price_paper_jeld_spin = QDoubleSpinBox()
+            self.unit_price_paper_jeld_spin.setMaximum(9999999999.99)
+            self.unit_price_paper_jeld_spin.setGroupSeparatorShown(True)
+
+            calc_layout.addRow("تعداد فرم جلد:", self.form_jeld_spin)
+            calc_layout.addRow("", self.double_sided_jeld_chk)
+            calc_layout.addRow("تعداد رنگ جلد:", self.color_jeld_combo)
+            calc_layout.addRow("ابعاد زینک جلد:", self.zinc_size_jeld_combo)
+            calc_layout.addRow("قیمت واحد هر ورق کاغذ جلد:", self.unit_price_paper_jeld_spin)
+
+            self.unit_price_zinc_spin = QDoubleSpinBox()
+            self.unit_price_zinc_spin.setMaximum(9999999999.99)
+            self.unit_price_zinc_spin.setGroupSeparatorShown(True)
+            calc_layout.addRow("قیمت واحد هر زینک:", self.unit_price_zinc_spin)
+
+            self.calc_group.setLayout(calc_layout)
+            form_layout.addRow(self.calc_group)
+
+            # --- Detailed Cost Inputs ---
+            cost_types = [
+                "هزینه تالیف", "هزینه ترجمه", "هزینه تصویرگری", "هزینه ویرایش", 
+                "هزینه طراحی جلد", "هزینه مديريت آتليه", "هزینه زینک", "هزینه چاپ متن", 
+                "هزینه چاپ جلد", "هزینه کاغذ متن", "هزینه کاغذ جلد", "هزینه روکش سلفون", 
+                "هزینه مقوای مغذی", "هزینه قالب لترپرس", "هزینه قالب دايكات", "هزینه خط تا", 
+                "هزینه ملزومات", "هزینه جلدسازی", "هزینه صحافی", "هزینه برش و بسته‌بندی", 
+                "هزینه حمل و نقل", "هزینه مونتاژ"
+            ]
+
+            self.cost_inputs = {}
+            for ctype in cost_types:
+                spin = QDoubleSpinBox()
+                spin.setMaximum(9999999999.99)
+                spin.setGroupSeparatorShown(True)
+                spin.setDecimals(0)
+                spin.lineEdit().setAlignment(Qt.AlignCenter) 
+                self.cost_inputs[ctype] = spin
+                form_layout.addRow(ctype + ":", spin)
                 
-        # Basic Paper & Zinc Calculations GroupBox
-        self.calc_group = QGroupBox("محاسبات پایه کاغذ و زینک")
-        calc_layout = QFormLayout()
+            # Protect auto-calculated fields
+            self.cost_inputs['هزینه کاغذ متن'].setReadOnly(True)
+            self.cost_inputs['هزینه کاغذ جلد'].setReadOnly(True)
+            self.cost_inputs['هزینه زینک'].setReadOnly(True)
 
-        # Text
-        self.form_matn_spin = QSpinBox()
-        self.double_sided_matn_chk = QCheckBox("چاپ دورو (متن)")
-        self.double_sided_matn_chk.setChecked(True)
-        self.color_matn_combo = QComboBox()
-        self.color_matn_combo.addItems(["تک رنگ (1)", "دو رنگ (2)", "چهار رنگ (4)"])
-        self.zinc_size_matn_combo = QComboBox()
-        self.zinc_size_matn_combo.addItems(["زینک 4.5 ورقی", "زینک 3.5 ورقی", "زینک 2.5 ورقی", "زینک 2 ورقی", "زینک GTO"])
-        self.unit_price_paper_matn_spin = QDoubleSpinBox()
-        self.unit_price_paper_matn_spin.setMaximum(9999999999.99)
-        self.unit_price_paper_matn_spin.setGroupSeparatorShown(True)
+            self.royalty_input = QDoubleSpinBox()
+            self.royalty_input.setSuffix(" %")
+            self.royalty_input.setMaximum(100.0)
+            self.royalty_input.setDecimals(0)
+            form_layout.addRow("حق تالیف درصدی:", self.royalty_input)
 
-        calc_layout.addRow("تعداد فرم متن (دستگاه چاپ):", self.form_matn_spin)
-        calc_layout.addRow("", self.double_sided_matn_chk)
-        calc_layout.addRow("تعداد رنگ متن:", self.color_matn_combo)
-        calc_layout.addRow("ابعاد زینک متن:", self.zinc_size_matn_combo)
-        calc_layout.addRow("قیمت واحد هر ورق کاغذ متن:", self.unit_price_paper_matn_spin)
-
-        # Cover
-        self.form_jeld_spin = QSpinBox()
-        self.double_sided_jeld_chk = QCheckBox("چاپ دورو (جلد)")
-        self.double_sided_jeld_chk.setChecked(False)
-        self.color_jeld_combo = QComboBox()
-        self.color_jeld_combo.addItems(["تک رنگ (1)", "دو رنگ (2)", "چهار رنگ (4)"])
-        self.color_jeld_combo.setCurrentIndex(2)
-        self.zinc_size_jeld_combo = QComboBox()
-        self.zinc_size_jeld_combo.addItems(["زینک 4.5 ورقی", "زینک 3.5 ورقی", "زینک 2.5 ورقی", "زینک 2 ورقی", "زینک GTO"])
-        self.unit_price_paper_jeld_spin = QDoubleSpinBox()
-        self.unit_price_paper_jeld_spin.setMaximum(9999999999.99)
-        self.unit_price_paper_jeld_spin.setGroupSeparatorShown(True)
-
-        calc_layout.addRow("تعداد فرم جلد (دستگاه چاپ):", self.form_jeld_spin)
-        calc_layout.addRow("", self.double_sided_jeld_chk)
-        calc_layout.addRow("تعداد رنگ جلد:", self.color_jeld_combo)
-        calc_layout.addRow("ابعاد زینک جلد:", self.zinc_size_jeld_combo)
-        calc_layout.addRow("قیمت واحد هر ورق کاغذ جلد:", self.unit_price_paper_jeld_spin)
-
-        # Zinc Price
-        self.unit_price_zinc_spin = QDoubleSpinBox()
-        self.unit_price_zinc_spin.setMaximum(9999999999.99)
-        self.unit_price_zinc_spin.setGroupSeparatorShown(True)
-        calc_layout.addRow("قیمت واحد هر زینک:", self.unit_price_zinc_spin)
-
-        self.calc_group.setLayout(calc_layout)
-        form_layout.addRow(self.calc_group)
-
-        # Connect signals for auto calculation
-        widgets_to_connect = [
-            self.form_matn_spin, self.unit_price_paper_matn_spin,
-            self.form_jeld_spin, self.unit_price_paper_jeld_spin,
-            self.unit_price_zinc_spin, self.inputs['تیراژ']
-        ]
-        for w in widgets_to_connect:
-            w.valueChanged.connect(self.auto_calculate_costs)
-
-        self.double_sided_matn_chk.toggled.connect(self.auto_calculate_costs)
-        self.double_sided_jeld_chk.toggled.connect(self.auto_calculate_costs)
-        self.color_matn_combo.currentIndexChanged.connect(self.auto_calculate_costs)
-        self.color_jeld_combo.currentIndexChanged.connect(self.auto_calculate_costs)
-
-        # Read only for target cost fields
-        self.cost_inputs['هزینه کاغذ متن'].setReadOnly(True)
-        self.cost_inputs['هزینه کاغذ جلد'].setReadOnly(True)
-        self.cost_inputs['هزینه زینک'].setReadOnly(True)
-
-        form_layout.addRow("---", QLabel("--- هزینه‌ها (تومان) ---"))
-        for k, v in self.cost_inputs.items():
-            form_layout.addRow(k + ":", v)
+            calc_btn = QPushButton("ثبت اطلاعات و انجام محاسبات نهایی")
+            calc_btn.setStyleSheet("padding: 10px; font-weight: bold; background-color: #27ae60; color: white;")
+            calc_btn.clicked.connect(self.perform_calculations)
             
-        form_layout.addRow("حق تالیف درصدی:", self.royalty_input)
+            scroll_layout.addLayout(form_layout)
+            scroll_layout.addWidget(calc_btn)
+            scroll_area.setWidget(scroll_content)
+            
+            main_layout = QVBoxLayout(self.tab_details)
+            main_layout.addWidget(scroll_area)
 
-        calc_btn = QPushButton("ثبت اطلاعات و انجام محاسبات")
-        calc_btn.clicked.connect(self.perform_calculations)
-        
-        scroll_layout.addLayout(form_layout)
-        scroll_layout.addWidget(calc_btn)
-        scroll_area.setWidget(scroll_content)
-        main_layout = QVBoxLayout(self.tab_details)
-        main_layout.addWidget(scroll_area)
+            # --- Signal Connections for Intelligent Auto-Calc ---
+            self.inputs['قطع'].currentIndexChanged.connect(self.suggest_optimal_layout)
+            self.total_pages_spin.valueChanged.connect(self.suggest_optimal_layout)
+            self.double_sided_matn_chk.toggled.connect(self.suggest_optimal_layout)
 
+            # Standard auto-calculation signals
+            widgets_to_connect = [
+                self.form_matn_spin, self.unit_price_paper_matn_spin,
+                self.form_jeld_spin, self.unit_price_paper_jeld_spin,
+                self.unit_price_zinc_spin, self.inputs['تیراژ']
+            ]
+            for w in widgets_to_connect:
+                w.valueChanged.connect(self.auto_calculate_costs)
+
+            self.double_sided_matn_chk.toggled.connect(self.auto_calculate_costs)
+            self.double_sided_jeld_chk.toggled.connect(self.auto_calculate_costs)
+            self.color_matn_combo.currentIndexChanged.connect(self.auto_calculate_costs)
+            self.color_jeld_combo.currentIndexChanged.connect(self.auto_calculate_costs)
 
     def auto_calculate_costs(self, *args):
         # Text colors
@@ -510,8 +565,8 @@ class BookCostCalculator(QMainWindow):
             prices_layout = QFormLayout()
             self.lbl_final_total = QLabel("0")
             self.lbl_single_price = QLabel("0")
-            self.lbl_final_total.setStyleSheet("font-size: 24px; font-weight: bold; color: darkred;")
-            self.lbl_single_price.setStyleSheet("font-size: 24px; font-weight: bold; color: darkgreen;")
+            self.lbl_final_total.setObjectName("lbl_final_total")
+            self.lbl_single_price.setObjectName("lbl_single_price")
             prices_layout.addRow("قیمت تمام شده کل (تومان):", self.lbl_final_total)
             prices_layout.addRow("قیمت تمام شده یک جلد کتاب (تومان):", self.lbl_single_price)
             layout.addLayout(prices_layout)
@@ -711,6 +766,9 @@ class BookCostCalculator(QMainWindow):
             # Commit and refresh project list
             self.db_conn.commit()
             self.load_projects()  # reload the table to show changes
+            now = jdatetime.datetime.now().strftime("%H:%M:%S")
+            self.status_project_label.setText(title)
+            self.status_save_label.setText(f"آخرین ذخیره: {now}")
             QMessageBox.information(self, "موفقیت", "اطلاعات پروژه با موفقیت ذخیره شد!")
 
         except sqlite3.Error as err:
@@ -921,6 +979,8 @@ class BookCostCalculator(QMainWindow):
                 self.project_table.setItem(row_idx, 2, QTableWidgetItem(row_data['creation_date']))
                 self.project_table.setItem(row_idx, 3, QTableWidgetItem(str(row_data['tiraj'])))
             self.project_table.setUpdatesEnabled(True)
+            if hasattr(self, 'project_stack'):
+                self.project_stack.setCurrentIndex(1 if results else 0)
         except sqlite3.Error as err:
             QMessageBox.warning(self, "خطا", f"بارگذاری پروژه‌ها با خطا مواجه شد:\n{err}")
     
@@ -1033,6 +1093,8 @@ class BookCostCalculator(QMainWindow):
 
             # Store the project ID for possible update later
             self.current_project_id = project_id
+            self.status_project_label.setText(project['title'])
+            self.status_save_label.setText("")
 
             self.tabs.setCurrentIndex(1)  # Switch to details tab
             QMessageBox.information(self, "بارگذاری", "پروژه با موفقیت بارگذاری شد. پس از ویرایش می‌توانید ذخیره کنید.")
@@ -1054,8 +1116,9 @@ class BookCostCalculator(QMainWindow):
     
     def new_project(self):
         """Clears the details form and prepares for a new project."""
-        # Reset the current project ID
         self.current_project_id = None
+        self.status_project_label.setText("پروژه جدید")
+        self.status_save_label.setText("")
 
         # Clear basic fields
         self.inputs['عنوان کتاب'].clear()
@@ -1117,7 +1180,7 @@ class BookCostCalculator(QMainWindow):
             f"برای حذف پروژه «{project_title}» لطفاً رمز عبور را وارد کنید:",
             QLineEdit.Password
         )
-        if not ok or password != DELETE_PASSWORD:
+        if not ok or password != DB_CONFIG.get('delete_password', 'admin'):
             QMessageBox.critical(self, "خطا", "رمز عبور اشتباه است یا عملیات لغو شد.")
             return
 
@@ -1717,6 +1780,32 @@ class BookCostCalculator(QMainWindow):
             QMessageBox.information(self, "موفقیت", f"{updated_count} قیمت پایه‌ای بارگذاری شد.")
         else:
             QMessageBox.information(self, "اطلاعات", "هیچ تطابقی یافت نشد.")
+    
+    def suggest_optimal_layout(self):
+        qate = self.inputs['قطع'].currentText()
+        total_pages = self.total_pages_spin.value()
+
+        if qate in self.OPTIMAL_SPECS and total_pages > 0:
+            specs = self.OPTIMAL_SPECS[qate]
+            
+            # math.ceil to ensure we don't under-order paper
+            sheets_per_book = math.ceil(total_pages / specs['pages_per_sheet'])
+            
+            # Logic: If double sided, we need 2 forms (front/back) per physical sheet
+            # If single sided, it's just 1 form per sheet.
+            multiplier = 2 if self.double_sided_matn_chk.isChecked() else 1
+            calculated_forms = sheets_per_book * multiplier
+
+            # Update UI Widgets
+            self.form_matn_spin.setValue(calculated_forms)
+            self.zinc_size_matn_combo.setCurrentText(specs['zinc'])
+            
+            # Update info label
+            self.lbl_optimal_paper.setText(
+                f"کاغذ بهینه: {specs['paper_size']} | ورق مصرفی هر جلد: {sheets_per_book}"
+            )
+        else:
+            self.lbl_optimal_paper.setText("کاغذ بهینه: - | ورق مصرفی هر جلد: -")
             
             
             
