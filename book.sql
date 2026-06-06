@@ -62,8 +62,12 @@ CREATE TABLE IF NOT EXISTS project_details (
     unit_price_paper_matn REAL,
     unit_price_paper_jeld REAL,
     unit_price_zinc REAL,
-    tedad_form_chap_matn INT,
-    tedad_form_chap_jeld INT,
+    waste_percent REAL DEFAULT 5,
+    book_width REAL,
+    book_height REAL,
+    paper_size TEXT,
+    orientation TEXT,
+    pages_per_sheet INTEGER,
     hazineh_talif DECIMAL(15,2) DEFAULT 0,
     hazineh_tarjomeh DECIMAL(15,2) DEFAULT 0,
     hazineh_tasvir DECIMAL(15,2) DEFAULT 0,
@@ -87,4 +91,9 @@ CREATE TABLE IF NOT EXISTS project_details (
     hazineh_haml_naghl DECIMAL(15,2) DEFAULT 0,
     hazineh_montaj DECIMAL(15,2) DEFAULT 0,
     FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS zinc_prices (
+    zinc_size TEXT PRIMARY KEY,
+    unit_price REAL DEFAULT 0
 );
