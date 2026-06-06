@@ -1059,7 +1059,10 @@ class BookCostCalculator(QMainWindow):
             book_w = dims[0] if dims[0] else paper_w / 4
             book_h = dims[1] if dims[1] else paper_h / 4
 
-        if specs.get('pages_per_sheet') is not None:
+        total_pages = self.total_pages_spin.value()
+        if total_pages == 0:
+            pages_per_sheet = 0
+        elif specs.get('pages_per_sheet') is not None:
             pages_per_sheet = specs['pages_per_sheet']
         elif book_w > 0 and book_h > 0:
             _, pages_per_sheet = self._compute_optimal_orientation(
