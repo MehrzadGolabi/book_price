@@ -132,7 +132,7 @@ class PaperPriceDialog(QDialog):
         f0.addRow("وزن (گرم):", self.dlg_weight_spin)
         f0.addRow("ارتفاع (سانتی‌متر):", self.dlg_height_spin)
         f0.addRow("طول (سانتی‌متر):", self.dlg_length_spin)
-        f0.addRow("قیمت (هر ۱۰۰۰ برگ):", self.dlg_price1_spin)
+        f0.addRow("قیمت کاغذ (هر کیلوگرم):", self.dlg_price1_spin)
         self.stacked.addWidget(page0)
 
         # Page 1 — bundle price
@@ -1550,7 +1550,8 @@ class BookCostCalculator(QMainWindow):
         self.paper_price_spin = QDoubleSpinBox()
         self.paper_price_spin.setMaximum(9999999999.99)
         self.paper_price_spin.setGroupSeparatorShown(True)
-        form.addRow("قیمت / قیمت بند (تومان):", self.paper_price_spin)
+        self.paper_price_label = QLabel("قیمت / قیمت بند (تومان):")
+        form.addRow(self.paper_price_label, self.paper_price_spin)
 
         self.paper_unit_price_lbl = QLabel("0")
         self.paper_unit_price_lbl.setStyleSheet("font-size: 16px; font-weight: bold; color: darkblue;")
@@ -1603,6 +1604,7 @@ class BookCostCalculator(QMainWindow):
             self.paper_bundle_count_spin.setEnabled(False)
             self.paper_bundle_weight_spin.setEnabled(False)
             self.paper_price_spin.setEnabled(True)
+            self.paper_price_label.setText("قیمت کاغذ (هر کیلوگرم):")
         elif formula == "قیمت هر بند و تعداد در بند":
             self.paper_weight_spin.setEnabled(False)
             self.paper_height_spin.setEnabled(False)
@@ -1610,13 +1612,15 @@ class BookCostCalculator(QMainWindow):
             self.paper_bundle_count_spin.setEnabled(True)
             self.paper_bundle_weight_spin.setEnabled(True)
             self.paper_price_spin.setEnabled(True)
-        else: # دستی
+            self.paper_price_label.setText("قیمت هر بند:")
+        else:  # دستی
             self.paper_weight_spin.setEnabled(False)
             self.paper_height_spin.setEnabled(False)
             self.paper_length_spin.setEnabled(False)
             self.paper_bundle_count_spin.setEnabled(False)
             self.paper_bundle_weight_spin.setEnabled(False)
             self.paper_price_spin.setEnabled(True)
+            self.paper_price_label.setText("قیمت واحد (مستقیم):")
 
     def calculate_paper_unit_price(self):
         formula = self.paper_formula_combo.currentText()
