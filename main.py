@@ -617,7 +617,15 @@ class BookCostCalculator(QMainWindow):
             calc_layout.addRow("", self.double_sided_matn_chk)
             calc_layout.addRow("تعداد رنگ متن:", self.color_matn_combo)
             calc_layout.addRow("ابعاد زینک متن:", self.zinc_size_matn_combo)
-            calc_layout.addRow("قیمت واحد هر ورق کاغذ متن:", self.unit_price_paper_matn_spin)
+            matn_price_row = QWidget()
+            matn_price_layout = QHBoxLayout(matn_price_row)
+            matn_price_layout.setContentsMargins(0, 0, 0, 0)
+            matn_price_layout.addWidget(self.unit_price_paper_matn_spin)
+            btn_calc_matn = QPushButton("🧮 محاسبه")
+            btn_calc_matn.setStyleSheet("background-color: #2a6496; color: white; padding: 4px 10px;")
+            btn_calc_matn.clicked.connect(lambda: self.open_paper_price_dialog("matn"))
+            matn_price_layout.addWidget(btn_calc_matn)
+            calc_layout.addRow("قیمت واحد هر ورق کاغذ متن:", matn_price_row)
 
             # Cover Setup
             self.form_jeld_spin = QSpinBox()
@@ -639,7 +647,15 @@ class BookCostCalculator(QMainWindow):
             calc_layout.addRow("", self.double_sided_jeld_chk)
             calc_layout.addRow("تعداد رنگ جلد:", self.color_jeld_combo)
             calc_layout.addRow("ابعاد زینک جلد:", self.zinc_size_jeld_combo)
-            calc_layout.addRow("قیمت واحد هر ورق کاغذ جلد:", self.unit_price_paper_jeld_spin)
+            jeld_price_row = QWidget()
+            jeld_price_layout = QHBoxLayout(jeld_price_row)
+            jeld_price_layout.setContentsMargins(0, 0, 0, 0)
+            jeld_price_layout.addWidget(self.unit_price_paper_jeld_spin)
+            btn_calc_jeld = QPushButton("🧮 محاسبه")
+            btn_calc_jeld.setStyleSheet("background-color: #2a6496; color: white; padding: 4px 10px;")
+            btn_calc_jeld.clicked.connect(lambda: self.open_paper_price_dialog("jeld"))
+            jeld_price_layout.addWidget(btn_calc_jeld)
+            calc_layout.addRow("قیمت واحد هر ورق کاغذ جلد:", jeld_price_row)
 
             self.unit_price_zinc_spin = QDoubleSpinBox()
             self.unit_price_zinc_spin.setMaximum(9999999999.99)
@@ -739,6 +755,14 @@ class BookCostCalculator(QMainWindow):
         total_zincs_jeld = self.form_jeld_spin.value() * cover_colors
         total_zinc_cost = (total_zincs_matn + total_zincs_jeld) * self.unit_price_zinc_spin.value()
         self.cost_inputs['هزینه زینک'].setValue(total_zinc_cost)
+
+    def open_paper_price_dialog(self, target):
+        dlg = PaperPriceDialog(self.db_conn, target, parent=self)
+        if dlg.exec() == QDialog.Accepted:
+            if target == "matn":
+                self.unit_price_paper_matn_spin.setValue(dlg.result_value)
+            else:
+                self.unit_price_paper_jeld_spin.setValue(dlg.result_value)
 
     def perform_calculations(self):
         # 1. Sum all costs
