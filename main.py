@@ -289,12 +289,16 @@ class PaperPriceDialog(QDialog):
 class BookCostCalculator(QMainWindow):
     
     OPTIMAL_SPECS = {
-        "وزیری": {"paper_size": "70x100", "pages_per_sheet": 32, "zinc": "زینک 3.5 ورقی"},
-        "رقعی": {"paper_size": "60x90", "pages_per_sheet": 32, "zinc": "زینک 2.5 ورقی"},
-        "رحلی کوچک": {"paper_size": "60x90", "pages_per_sheet": 16, "zinc": "زینک 2.5 ورقی"},
-        "رحلی بزرگ": {"paper_size": "70x100", "pages_per_sheet": 16, "zinc": "زینک 3.5 ورقی"},
-        "جیبی": {"paper_size": "60x90", "pages_per_sheet": 64, "zinc": "زینک 2.5 ورقی"},
-        "خشتی": {"paper_size": "50x70", "pages_per_sheet": 12, "zinc": "زینک 2 ورقی"},
+        "وزیری":      {"paper_size": "70x100", "pages_per_sheet": 32,   "zinc": "زینک 3.5 ورقی", "default_dims": None},
+        "رقعی":       {"paper_size": "60x90",  "pages_per_sheet": 32,   "zinc": "زینک 2.5 ورقی", "default_dims": None},
+        "رحلی کوچک": {"paper_size": "60x90",  "pages_per_sheet": 16,   "zinc": "زینک 2.5 ورقی", "default_dims": None},
+        "رحلی بزرگ": {"paper_size": "70x100", "pages_per_sheet": 16,   "zinc": "زینک 3.5 ورقی", "default_dims": None},
+        "جیبی":       {"paper_size": "60x90",  "pages_per_sheet": 64,   "zinc": "زینک 2.5 ورقی", "default_dims": None},
+        "خشتی":       {"paper_size": "50x70",  "pages_per_sheet": 12,   "zinc": "زینک 2 ورقی",   "default_dims": None},
+        "مربع":       {"paper_size": "60x90",  "pages_per_sheet": None, "zinc": "زینک 2.5 ورقی", "default_dims": (21, 21)},
+        "بزرگ‌قطع":  {"paper_size": "70x100", "pages_per_sheet": None, "zinc": "زینک 3.5 ورقی", "default_dims": (24, 34)},
+        "کوچک‌قطع":  {"paper_size": "60x90",  "pages_per_sheet": None, "zinc": "زینک 2.5 ورقی", "default_dims": (14, 20)},
+        "سفارشی":    {"paper_size": "70x100", "pages_per_sheet": None, "zinc": "زینک 3.5 ورقی", "default_dims": (None, None)},
     }
     
     def __init__(self):
@@ -360,6 +364,23 @@ class BookCostCalculator(QMainWindow):
                         noeh_chap_jeld TEXT,
                         noeh_rang_jeld TEXT,
                         noeh_zink_jeld TEXT,
+                        form_matn INTEGER,
+                        is_double_sided_matn BOOLEAN,
+                        color_count_matn INTEGER,
+                        zinc_size_matn TEXT,
+                        form_jeld INTEGER,
+                        is_double_sided_jeld BOOLEAN,
+                        color_count_jeld INTEGER,
+                        zinc_size_jeld TEXT,
+                        unit_price_paper_matn REAL,
+                        unit_price_paper_jeld REAL,
+                        unit_price_zinc REAL,
+                        waste_percent REAL DEFAULT 5,
+                        book_width REAL,
+                        book_height REAL,
+                        paper_size TEXT,
+                        orientation TEXT,
+                        pages_per_sheet INTEGER,
                         hazineh_talif REAL DEFAULT 0,
                         hazineh_tarjomeh REAL DEFAULT 0,
                         hazineh_tasvir REAL DEFAULT 0,
@@ -413,6 +434,17 @@ class BookCostCalculator(QMainWindow):
                 self.db_conn.commit()
 
                 new_cols = [
+                    ("form_matn", "INTEGER"),
+                    ("is_double_sided_matn", "BOOLEAN"),
+                    ("color_count_matn", "INTEGER"),
+                    ("zinc_size_matn", "TEXT"),
+                    ("form_jeld", "INTEGER"),
+                    ("is_double_sided_jeld", "BOOLEAN"),
+                    ("color_count_jeld", "INTEGER"),
+                    ("zinc_size_jeld", "TEXT"),
+                    ("unit_price_paper_matn", "REAL"),
+                    ("unit_price_paper_jeld", "REAL"),
+                    ("unit_price_zinc", "REAL"),
                     ("waste_percent", "REAL DEFAULT 5"),
                     ("book_width", "REAL"),
                     ("book_height", "REAL"),
@@ -583,8 +615,10 @@ class BookCostCalculator(QMainWindow):
 
             # --- Book Size and Auto-Calculator Inputs ---
             self.inputs['قطع'] = QComboBox()
-            # Populating based on the keys in your OPTIMAL_SPECS dictionary
-            self.inputs['قطع'].addItems(["وزیری", "رقعی", "رحلی کوچک", "رحلی بزرگ", "جیبی", "خشتی"])
+            self.inputs['قطع'].addItems([
+                "وزیری", "رقعی", "رحلی کوچک", "رحلی بزرگ", "جیبی", "خشتی",
+                "مربع", "بزرگ‌قطع", "کوچک‌قطع", "سفارشی"
+            ])
             
             # Label to display optimization feedback
             self.lbl_optimal_paper = QLabel("کاغذ بهینه: - | ورق مصرفی هر جلد: -")
@@ -604,6 +638,36 @@ class BookCostCalculator(QMainWindow):
             form_layout.addRow("قطع کتاب:", self.inputs['قطع'])
             form_layout.addRow("", self.lbl_optimal_paper) # Info label
             form_layout.addRow("تعداد صفحات کتاب:", self.total_pages_spin)
+
+            # ── Paper size selector (always visible) ──────────────────────
+            self.paper_size_combo = QComboBox()
+            self.paper_size_combo.addItems(["70×100", "60×90", "50×70"])
+            form_layout.addRow("اندازه کاغذ چاپ:", self.paper_size_combo)
+
+            # ── Custom book dimensions (hidden for standard formats) ───────
+            dims_widget = QWidget()
+            dims_layout = QHBoxLayout(dims_widget)
+            dims_layout.setContentsMargins(0, 0, 0, 0)
+            self.book_width_spin = QDoubleSpinBox()
+            self.book_width_spin.setRange(5, 60)
+            self.book_width_spin.setDecimals(1)
+            self.book_width_spin.setSuffix(" cm")
+            self.book_height_spin = QDoubleSpinBox()
+            self.book_height_spin.setRange(5, 100)
+            self.book_height_spin.setDecimals(1)
+            self.book_height_spin.setSuffix(" cm")
+            dims_layout.addWidget(QLabel("عرض:"))
+            dims_layout.addWidget(self.book_width_spin)
+            dims_layout.addWidget(QLabel("  ارتفاع:"))
+            dims_layout.addWidget(self.book_height_spin)
+            self.book_dims_row_widget = dims_widget
+            form_layout.addRow("ابعاد کتاب:", self.book_dims_row_widget)
+
+            # ── Orientation result label ───────────────────────────────────
+            self.orientation_label = QLabel("")
+            self.orientation_label.setWordWrap(True)
+            self.orientation_label.setStyleSheet("color: #64b5f6;")
+            form_layout.addRow("جهت بهینه:", self.orientation_label)
 
             # --- Dynamic Type Categories ---
             dynamic_types = ["نوع کاغذ متن", "نوع چاپ متن", "نوع رنگ متن", "نوع زینک متن", 
@@ -772,7 +836,11 @@ class BookCostCalculator(QMainWindow):
             self.zinc_size_jeld_combo.currentIndexChanged.connect(self._update_zinc_price_labels)
             self.zinc_size_jeld_combo.currentIndexChanged.connect(self.auto_calculate_costs)
             self.tabs.currentChanged.connect(lambda idx: self._update_zinc_price_labels() if idx == 1 else None)
+            self.book_width_spin.valueChanged.connect(self.suggest_optimal_layout)
+            self.book_height_spin.valueChanged.connect(self.suggest_optimal_layout)
+            self.paper_size_combo.currentIndexChanged.connect(self.suggest_optimal_layout)
             self._update_zinc_price_labels()
+            self.suggest_optimal_layout()
 
     def _get_zinc_price(self, zinc_size):
         try:
@@ -1030,6 +1098,7 @@ class BookCostCalculator(QMainWindow):
                         form_jeld = ?, is_double_sided_jeld = ?, color_count_jeld = ?, zinc_size_jeld = ?,
                         unit_price_paper_matn = ?, unit_price_paper_jeld = ?, unit_price_zinc = ?,
                         waste_percent = ?,
+                        book_width = ?, book_height = ?, paper_size = ?, orientation = ?, pages_per_sheet = ?,
                         hazineh_talif = ?, hazineh_tarjomeh = ?, hazineh_tasvir = ?, hazineh_virayesh = ?,
                         hazineh_tarahi_jeld = ?, hazineh_modiriat_atelieh = ?, hazineh_zink = ?,
                         hazineh_chap_matn = ?, hazineh_chap_jeld = ?, hazineh_kaghaz_matn = ?,
@@ -1050,6 +1119,11 @@ class BookCostCalculator(QMainWindow):
                     self.zinc_size_jeld_combo.currentText(),
                     self.unit_price_paper_matn_spin.value(), self.unit_price_paper_jeld_spin.value(), 0,
                     self.waste_percent_spin.value(),
+                    self.book_width_spin.value() if self.book_dims_row_widget.isVisible() else None,
+                    self.book_height_spin.value() if self.book_dims_row_widget.isVisible() else None,
+                    self.paper_size_combo.currentText().replace("×", "x"),
+                    self.orientation_label.text() or None,
+                    self.form_matn_spin.value(),
                     self.cost_inputs['هزینه تالیف'].value(), self.cost_inputs['هزینه ترجمه'].value(),
                     self.cost_inputs['هزینه تصویرگری'].value(), self.cost_inputs['هزینه ویرایش'].value(),
                     self.cost_inputs['هزینه طراحی جلد'].value(), self.cost_inputs['هزینه مديريت آتليه'].value(),
@@ -1093,6 +1167,7 @@ class BookCostCalculator(QMainWindow):
                         form_matn, is_double_sided_matn, color_count_matn, zinc_size_matn,
                         form_jeld, is_double_sided_jeld, color_count_jeld, zinc_size_jeld,
                         unit_price_paper_matn, unit_price_paper_jeld, unit_price_zinc, waste_percent,
+                        book_width, book_height, paper_size, orientation, pages_per_sheet,
                         hazineh_talif, hazineh_tarjomeh, hazineh_tasvir, hazineh_virayesh,
                         hazineh_tarahi_jeld, hazineh_modiriat_atelieh, hazineh_zink, hazineh_chap_matn,
                         hazineh_chap_jeld, hazineh_kaghaz_matn, hazineh_kaghaz_jeld, hazineh_rokesh_salfon,
@@ -1102,6 +1177,7 @@ class BookCostCalculator(QMainWindow):
                     ) VALUES (
                         ?, ?, ?, ?, ?, ?, ?, ?, ?,
                         ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                        ?, ?, ?, ?, ?,
                         ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
                     )
                 """
@@ -1117,6 +1193,11 @@ class BookCostCalculator(QMainWindow):
                     self.zinc_size_jeld_combo.currentText(),
                     self.unit_price_paper_matn_spin.value(), self.unit_price_paper_jeld_spin.value(), 0,
                     self.waste_percent_spin.value(),
+                    self.book_width_spin.value() if self.book_dims_row_widget.isVisible() else None,
+                    self.book_height_spin.value() if self.book_dims_row_widget.isVisible() else None,
+                    self.paper_size_combo.currentText().replace("×", "x"),
+                    self.orientation_label.text() or None,
+                    self.form_matn_spin.value(),
                     self.cost_inputs['هزینه تالیف'].value(), self.cost_inputs['هزینه ترجمه'].value(),
                     self.cost_inputs['هزینه تصویرگری'].value(), self.cost_inputs['هزینه ویرایش'].value(),
                     self.cost_inputs['هزینه طراحی جلد'].value(), self.cost_inputs['هزینه مديريت آتليه'].value(),
@@ -1436,6 +1517,13 @@ class BookCostCalculator(QMainWindow):
                 else:
                     self.waste_percent_spin.setValue(5.0)
 
+                if 'book_width' in details and details['book_width'] is not None:
+                    self.book_width_spin.setValue(float(details['book_width']))
+                if 'book_height' in details and details['book_height'] is not None:
+                    self.book_height_spin.setValue(float(details['book_height']))
+                if 'paper_size' in details and details['paper_size']:
+                    self.paper_size_combo.setCurrentText(details['paper_size'].replace("x", "×"))
+
                 cost_mapping = {
                     'هزینه تالیف': 'hazineh_talif',
                     'هزینه ترجمه': 'hazineh_tarjomeh',
@@ -1519,6 +1607,10 @@ class BookCostCalculator(QMainWindow):
         self.zinc_size_jeld_combo.setCurrentIndex(0)
         self.unit_price_paper_jeld_spin.setValue(0.0)
         self.waste_percent_spin.setValue(5.0)
+        self.book_width_spin.setValue(self.book_width_spin.minimum())
+        self.book_height_spin.setValue(self.book_height_spin.minimum())
+        self.paper_size_combo.setCurrentIndex(0)
+        self.orientation_label.setText("")
 
         # Clear costs
         for spin in self.cost_inputs.values():
@@ -2174,31 +2266,74 @@ class BookCostCalculator(QMainWindow):
         else:
             QMessageBox.information(self, "اطلاعات", "هیچ تطابقی یافت نشد.")
     
+    def _compute_optimal_orientation(self, book_w, book_h, paper_w, paper_h):
+        portrait  = int((paper_w // book_w) * (paper_h // book_h))
+        landscape = int((paper_w // book_h) * (paper_h // book_w))
+        if landscape >= portrait:
+            return "landscape", landscape * 2
+        return "portrait", portrait * 2
+
     def suggest_optimal_layout(self):
         qate = self.inputs['قطع'].currentText()
         total_pages = self.total_pages_spin.value()
+        specs = self.OPTIMAL_SPECS.get(qate)
 
-        if qate in self.OPTIMAL_SPECS and total_pages > 0:
-            specs = self.OPTIMAL_SPECS[qate]
-            
-            # math.ceil to ensure we don't under-order paper
-            sheets_per_book = math.ceil(total_pages / specs['pages_per_sheet'])
-            
-            # Logic: If double sided, we need 2 forms (front/back) per physical sheet
-            # If single sided, it's just 1 form per sheet.
-            multiplier = 2 if self.double_sided_matn_chk.isChecked() else 1
-            calculated_forms = sheets_per_book * multiplier
+        is_custom = specs is not None and specs['pages_per_sheet'] is None
+        self.book_dims_row_widget.setVisible(is_custom)
+        self.orientation_label.setVisible(is_custom)
 
-            # Update UI Widgets
-            self.form_matn_spin.setValue(calculated_forms)
-            self.zinc_size_matn_combo.setCurrentText(specs['zinc'])
-            
-            # Update info label
-            self.lbl_optimal_paper.setText(
-                f"کاغذ بهینه: {specs['paper_size']} | ورق مصرفی هر جلد: {sheets_per_book}"
-            )
-        else:
+        if specs is None or total_pages == 0:
             self.lbl_optimal_paper.setText("کاغذ بهینه: - | ورق مصرفی هر جلد: -")
+            return
+
+        if specs['pages_per_sheet'] is not None:
+            pages_per_sheet = specs['pages_per_sheet']
+            self.paper_size_combo.setCurrentText(specs['paper_size'].replace("x", "×"))
+            self.orientation_label.setText("")
+        else:
+            if specs['default_dims'] and specs['default_dims'][0] is not None:
+                if self.book_width_spin.value() == self.book_width_spin.minimum():
+                    self.book_width_spin.setValue(specs['default_dims'][0])
+                    self.book_height_spin.setValue(specs['default_dims'][1])
+            self.paper_size_combo.setCurrentText(specs['paper_size'].replace("x", "×"))
+
+            book_w = self.book_width_spin.value()
+            book_h = self.book_height_spin.value()
+            paper_str = self.paper_size_combo.currentText().replace("×", "x")
+            try:
+                paper_w, paper_h = map(float, paper_str.split("x"))
+            except ValueError:
+                self.lbl_optimal_paper.setText("اندازه کاغذ نامعتبر است")
+                return
+
+            if book_w > 0 and book_h > 0:
+                orientation, pages_per_sheet = self._compute_optimal_orientation(
+                    book_w, book_h, paper_w, paper_h
+                )
+                alt_orientation = "portrait" if orientation == "landscape" else "landscape"
+                if orientation == "landscape":
+                    alt_pages = int((paper_w // book_w) * (paper_h // book_h)) * 2
+                else:
+                    alt_pages = int((paper_w // book_h) * (paper_h // book_w)) * 2
+                saving = round((pages_per_sheet - alt_pages) / alt_pages * 100) if alt_pages > 0 else 0
+                label_map = {"landscape": "افقی", "portrait": "عمودی"}
+                text = f"جهت: {label_map[orientation]} — {pages_per_sheet} صفحه در ورق"
+                if saving > 0:
+                    text += f" ({saving}٪ بهتر از {label_map[alt_orientation]})"
+                self.orientation_label.setText(text)
+            else:
+                pages_per_sheet = 1
+
+        if specs.get('zinc'):
+            self.zinc_size_matn_combo.setCurrentText(specs['zinc'])
+
+        multiplier = 2 if self.double_sided_matn_chk.isChecked() else 1
+        sheets_per_book = math.ceil(total_pages / pages_per_sheet) if pages_per_sheet > 0 else 0
+        calculated_forms = sheets_per_book * multiplier
+        self.form_matn_spin.setValue(calculated_forms)
+        self.lbl_optimal_paper.setText(
+            f"کاغذ بهینه: {specs['paper_size']} | ورق مصرفی هر جلد: {sheets_per_book}"
+        )
             
             
             
