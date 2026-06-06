@@ -161,7 +161,7 @@ class PaperPriceDialog(QDialog):
         self.name_input.setPlaceholderText("نام کاغذ برای ذخیره در کتابخانه (اختیاری)")
         calc_vbox.addWidget(self.name_input)
 
-        self.result_label = QLabel("قیمت واحد: ۰")
+        self.result_label = QLabel("قیمت واحد: 0.00 تومان")
         self.result_label.setAlignment(Qt.AlignCenter)
         self.result_label.setStyleSheet(
             "background-color: #1a2a1a; border: 1px solid #2d5a27;"
@@ -197,11 +197,11 @@ class PaperPriceDialog(QDialog):
         idx = self.formula_combo.currentIndex()
         if idx == 0:
             h = self.dlg_height_spin.value()
-            l = self.dlg_length_spin.value()
+            length = self.dlg_length_spin.value()
             w = self.dlg_weight_spin.value()
             p = self.dlg_price1_spin.value()
-            if h > 0 and l > 0 and w > 0:
-                return ((h * l) * w / 10000) * (p / 1000)
+            if h > 0 and length > 0 and w > 0:
+                return ((h * length) * w / 10000) * (p / 1000)
         elif idx == 1:
             count = self.dlg_count_spin.value()
             p = self.dlg_price2_spin.value()
@@ -223,7 +223,7 @@ class PaperPriceDialog(QDialog):
                 "FROM paper_calculations ORDER BY id DESC"
             )
             rows = cursor.fetchall()
-        except Exception:
+        except sqlite3.Error:
             rows = []
 
         self.lib_table.setRowCount(0)
@@ -268,7 +268,7 @@ class PaperPriceDialog(QDialog):
         idx = self.formula_combo.currentIndex()
         w = self.dlg_weight_spin.value() if idx == 0 else 0
         h = self.dlg_height_spin.value() if idx == 0 else 0
-        l = self.dlg_length_spin.value() if idx == 0 else 0
+        length = self.dlg_length_spin.value() if idx == 0 else 0
         count = self.dlg_count_spin.value() if idx == 1 else 0
         prices = [self.dlg_price1_spin.value(), self.dlg_price2_spin.value(), self.dlg_manual_spin.value()]
         try:
@@ -277,7 +277,7 @@ class PaperPriceDialog(QDialog):
                 "INSERT INTO paper_calculations "
                 "(paper_type, formula_type, weight, height, length, bundle_count, bundle_weight, price, unit_price) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (name, self.FORMULA_LABELS[idx], w, h, l, count, 0, prices[idx], self.result_value)
+                (name, self.FORMULA_LABELS[idx], w, h, length, count, 0, prices[idx], self.result_value)
             )
             self.db_conn.commit()
             if hasattr(self.parent(), 'load_paper_calculations'):
@@ -758,6 +758,7 @@ class BookCostCalculator(QMainWindow):
 
     def open_paper_price_dialog(self, target):
         dlg = PaperPriceDialog(self.db_conn, target, parent=self)
+        dlg.setAttribute(Qt.WA_DeleteOnClose)
         if dlg.exec() == QDialog.Accepted:
             if target == "matn":
                 self.unit_price_paper_matn_spin.setValue(dlg.result_value)
