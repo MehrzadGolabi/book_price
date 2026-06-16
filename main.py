@@ -641,6 +641,15 @@ class BookCostCalculator(QMainWindow):
                     ("orientation", "TEXT"),
                     ("pages_per_sheet", "INTEGER"),
                     ("total_pages", "INTEGER DEFAULT 0"),
+                    ("hazineh_horoofchini",    "REAL DEFAULT 0"),
+                    ("hazineh_mojawwez_ershad", "REAL DEFAULT 0"),
+                    ("hazineh_shabok",          "REAL DEFAULT 0"),
+                    ("hazineh_talakoobi",       "REAL DEFAULT 0"),
+                    ("hazineh_uv_mowzei",       "REAL DEFAULT 0"),
+                    ("hazineh_barjasteh",       "REAL DEFAULT 0"),
+                    ("book_type_preset",        "TEXT DEFAULT 'شومیز ساده'"),
+                    ("pricing_multiplier",      "REAL DEFAULT 2.5"),
+                    ("distribution_percent",    "REAL DEFAULT 35.0"),
                 ]
                 for col_name, col_def in new_cols:
                     try:
