@@ -68,6 +68,9 @@ def compute_net_revenue_per_copy(cover_price: float, distribution_pct: float,
 
 
 def compute_break_even(total_cost: float, net_revenue_per_copy: float) -> int:
+    # Returns 0 for both "breaks even at 0 copies" (total_cost=0) and
+    # "never breaks even" (net_revenue_per_copy<=0). Callers should check
+    # net_revenue_per_copy > 0 before interpreting a 0 return as meaningful.
     if net_revenue_per_copy <= 0:
         return 0
     return math.ceil(total_cost / net_revenue_per_copy)

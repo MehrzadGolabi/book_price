@@ -80,3 +80,8 @@ def test_compute_scenarios_profit_signs():
     # 100% sales (1000 copies) should be a profit
     row_100 = next(r for r in rows if r['sales_qty'] == 1000)
     assert row_100['net_profit'] > 0
+
+
+def test_compute_breakdown_pcts_zero_cover():
+    bd = compute_breakdown_pcts(0, 10_000, 35.0, 10.0)
+    assert all(v == 0.0 for v in bd.values())
