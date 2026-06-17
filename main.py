@@ -1563,7 +1563,10 @@ class BookCostCalculator(QMainWindow):
                         hazineh_kaghaz_jeld = ?, hazineh_rokesh_salfon = ?, hazineh_moghava_maghzi = ?,
                         hazineh_ghaleb_letterpress = ?, hazineh_ghaleb_diecut = ?, hazineh_khat_ta = ?,
                         hazineh_malzomat = ?, hazineh_jeldsazi = ?, hazineh_sahafi = ?,
-                        hazineh_boresh_bastebandi = ?, hazineh_haml_naghl = ?, hazineh_montaj = ?
+                        hazineh_boresh_bastebandi = ?, hazineh_haml_naghl = ?, hazineh_montaj = ?,
+                        hazineh_horoofchini = ?, hazineh_mojawwez_ershad = ?, hazineh_shabok = ?,
+                        hazineh_talakoobi = ?, hazineh_uv_mowzei = ?, hazineh_barjasteh = ?,
+                        book_type_preset = ?, pricing_multiplier = ?, distribution_percent = ?
                     WHERE project_id = ?
                 """
                 val_details = (
@@ -1594,6 +1597,15 @@ class BookCostCalculator(QMainWindow):
                     self.cost_inputs['هزینه ملزومات'].value(), self.cost_inputs['هزینه جلدسازی'].value(),
                     self.cost_inputs['هزینه صحافی'].value(), self.cost_inputs['هزینه برش و بسته‌بندی'].value(),
                     self.cost_inputs['هزینه حمل و نقل'].value(), self.cost_inputs['هزینه مونتاژ'].value(),
+                    self.cost_inputs['هزینه حروفچینی و صفحه‌آرایی'].value(),
+                    self.cost_inputs['هزینه مجوز ارشاد'].value(),
+                    self.cost_inputs['هزینه ثبت شابک'].value(),
+                    self.cost_inputs['هزینه طلاکوبی'].value(),
+                    self.cost_inputs['هزینه UV موضعی'].value(),
+                    self.cost_inputs['هزینه برجسته‌کاری'].value(),
+                    self.book_type_combo.currentText(),
+                    self.pricing_multiplier_spin.value() if hasattr(self, 'pricing_multiplier_spin') else 2.5,
+                    self.distribution_spin.value() if hasattr(self, 'distribution_spin') else 35.0,
                     self.current_project_id
                 )
                 self.cursor.execute(query_details, val_details)
@@ -1633,12 +1645,16 @@ class BookCostCalculator(QMainWindow):
                         hazineh_chap_jeld, hazineh_kaghaz_matn, hazineh_kaghaz_jeld, hazineh_rokesh_salfon,
                         hazineh_moghava_maghzi, hazineh_ghaleb_letterpress, hazineh_ghaleb_diecut,
                         hazineh_khat_ta, hazineh_malzomat, hazineh_jeldsazi, hazineh_sahafi,
-                        hazineh_boresh_bastebandi, hazineh_haml_naghl, hazineh_montaj
+                        hazineh_boresh_bastebandi, hazineh_haml_naghl, hazineh_montaj,
+                        hazineh_horoofchini, hazineh_mojawwez_ershad, hazineh_shabok,
+                        hazineh_talakoobi, hazineh_uv_mowzei, hazineh_barjasteh,
+                        book_type_preset, pricing_multiplier, distribution_percent
                     ) VALUES (
                         ?, ?, ?, ?, ?, ?, ?, ?, ?,
                         ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                         ?, ?, ?, ?, ?, ?,
-                        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                        ?, ?, ?, ?, ?, ?, ?, ?, ?
                     )
                 """
                 val_details = (
@@ -1669,7 +1685,16 @@ class BookCostCalculator(QMainWindow):
                     self.cost_inputs['هزینه قالب دايكات'].value(), self.cost_inputs['هزینه خط تا'].value(),
                     self.cost_inputs['هزینه ملزومات'].value(), self.cost_inputs['هزینه جلدسازی'].value(),
                     self.cost_inputs['هزینه صحافی'].value(), self.cost_inputs['هزینه برش و بسته‌بندی'].value(),
-                    self.cost_inputs['هزینه حمل و نقل'].value(), self.cost_inputs['هزینه مونتاژ'].value()
+                    self.cost_inputs['هزینه حمل و نقل'].value(), self.cost_inputs['هزینه مونتاژ'].value(),
+                    self.cost_inputs['هزینه حروفچینی و صفحه‌آرایی'].value(),
+                    self.cost_inputs['هزینه مجوز ارشاد'].value(),
+                    self.cost_inputs['هزینه ثبت شابک'].value(),
+                    self.cost_inputs['هزینه طلاکوبی'].value(),
+                    self.cost_inputs['هزینه UV موضعی'].value(),
+                    self.cost_inputs['هزینه برجسته‌کاری'].value(),
+                    self.book_type_combo.currentText(),
+                    self.pricing_multiplier_spin.value() if hasattr(self, 'pricing_multiplier_spin') else 2.5,
+                    self.distribution_spin.value() if hasattr(self, 'distribution_spin') else 35.0
                 )
                 self.cursor.execute(query_details, val_details)
 
