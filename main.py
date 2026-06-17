@@ -9,7 +9,6 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QScrollArea, QWidget, 
                                QStackedWidget)
 from PySide6.QtCore import Qt, QDate
 from PySide6.QtGui import QAction, QFontDatabase, QShortcut, QKeySequence, QColor
-import sqlite3
 import math
 # Matplotlib imports
 import matplotlib
@@ -28,6 +27,7 @@ from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.lib.units import cm
 # Local modules
 from config import get_db_config, DB_CONFIG
+from db import BookDatabase
 from pricing import (
     compute_cover_price,
     compute_net_revenue_per_copy,
@@ -137,178 +137,21 @@ class BookCostCalculator(QMainWindow):
         # VERY IMPORTANT: Set the entire application to Right-To-Left for Farsi
         self.setLayoutDirection(Qt.RightToLeft)
         
-        self.db_conn = None
+        self.db: BookDatabase = BookDatabase(DB_CONFIG['filename'])
         self.cost_inputs: dict = {}
         self.cost_input_rows: dict = {}
         self.cost_group_boxes: dict = {}
-        self.connect_db()
+        try:
+            self.db.connect()
+        except Exception as err:
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.critical(
+                self, "خطای دیتابیس",
+                f"ارتباط با دیتابیس برقرار نشد.\nلطفاً فایل config.ini را بررسی کنید.\n\n{err}"
+            )
+            sys.exit(1)
 
         self.init_ui()
-
-    def connect_db(self):
-            try:
-                self.db_conn = sqlite3.connect(DB_CONFIG['filename'])
-                self.db_conn.row_factory = sqlite3.Row
-                self.cursor = self.db_conn.cursor()
-
-                # Create ALL necessary tables for the standalone SQLite app
-                self.cursor.executescript("""
-                    CREATE TABLE IF NOT EXISTS categories (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        category_name TEXT NOT NULL,
-                        item_value TEXT NOT NULL,
-                        UNIQUE(category_name, item_value)
-                    );
-
-                    CREATE TABLE IF NOT EXISTS paper_calculations (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        paper_type TEXT NOT NULL,
-                        formula_type TEXT NOT NULL,
-                        weight REAL,
-                        height REAL,
-                        length REAL,
-                        bundle_count INTEGER,
-                        bundle_weight REAL,
-                        price REAL,
-                        unit_price REAL
-                    );
-
-                    CREATE TABLE IF NOT EXISTS projects (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        title TEXT NOT NULL,
-                        subtitle TEXT,
-                        creation_date DATE NOT NULL,
-                        qate TEXT,
-                        tiraj INTEGER NOT NULL,
-                        royalty_percent REAL,
-                        total_cost REAL,
-                        single_book_cost REAL
-                    );
-
-                    CREATE TABLE IF NOT EXISTS project_details (
-                        project_id INTEGER PRIMARY KEY,
-                        noeh_kaghaz_matn TEXT,
-                        noeh_chap_matn TEXT,
-                        noeh_rang_matn TEXT,
-                        noeh_zink_matn TEXT,
-                        noeh_kaghaz_jeld TEXT,
-                        noeh_chap_jeld TEXT,
-                        noeh_rang_jeld TEXT,
-                        noeh_zink_jeld TEXT,
-                        form_matn INTEGER,
-                        is_double_sided_matn BOOLEAN,
-                        color_count_matn INTEGER,
-                        zinc_size_matn TEXT,
-                        form_jeld INTEGER,
-                        is_double_sided_jeld BOOLEAN,
-                        color_count_jeld INTEGER,
-                        zinc_size_jeld TEXT,
-                        unit_price_paper_matn REAL,
-                        unit_price_paper_jeld REAL,
-                        unit_price_zinc REAL,
-                        waste_percent REAL DEFAULT 5,
-                        book_width REAL,
-                        book_height REAL,
-                        paper_size TEXT,
-                        orientation TEXT,
-                        pages_per_sheet INTEGER,
-                        total_pages INTEGER DEFAULT 0,
-                        hazineh_talif REAL DEFAULT 0,
-                        hazineh_tarjomeh REAL DEFAULT 0,
-                        hazineh_tasvir REAL DEFAULT 0,
-                        hazineh_virayesh REAL DEFAULT 0,
-                        hazineh_tarahi_jeld REAL DEFAULT 0,
-                        hazineh_modiriat_atelieh REAL DEFAULT 0,
-                        hazineh_zink REAL DEFAULT 0,
-                        hazineh_chap_matn REAL DEFAULT 0,
-                        hazineh_chap_jeld REAL DEFAULT 0,
-                        hazineh_kaghaz_matn REAL DEFAULT 0,
-                        hazineh_kaghaz_jeld REAL DEFAULT 0,
-                        hazineh_rokesh_salfon REAL DEFAULT 0,
-                        hazineh_moghava_maghzi REAL DEFAULT 0,
-                        hazineh_ghaleb_letterpress REAL DEFAULT 0,
-                        hazineh_ghaleb_diecut REAL DEFAULT 0,
-                        hazineh_khat_ta REAL DEFAULT 0,
-                        hazineh_malzomat REAL DEFAULT 0,
-                        hazineh_jeldsazi REAL DEFAULT 0,
-                        hazineh_sahafi REAL DEFAULT 0,
-                        hazineh_boresh_bastebandi REAL DEFAULT 0,
-                        hazineh_haml_naghl REAL DEFAULT 0,
-                        hazineh_montaj REAL DEFAULT 0,
-                        FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
-                    );
-
-                    CREATE TABLE IF NOT EXISTS default_cost_mappings (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        category_name TEXT NOT NULL,
-                        item_value TEXT NOT NULL,
-                        target_cost_field TEXT NOT NULL,
-                        default_cost REAL NOT NULL
-                    );
-
-                    CREATE TABLE IF NOT EXISTS zinc_prices (
-                        zinc_size TEXT PRIMARY KEY,
-                        unit_price REAL DEFAULT 0
-                    );
-                """)
-
-                self.db_conn.commit()
-
-                zinc_sizes = [
-                    "زینک 2 ورقی", "زینک 2.5 ورقی", "زینک 3.5 ورقی",
-                    "زینک 4.5 ورقی", "زینک GTO"
-                ]
-                for zs in zinc_sizes:
-                    self.cursor.execute(
-                        "INSERT OR IGNORE INTO zinc_prices (zinc_size, unit_price) VALUES (?, 0)",
-                        (zs,)
-                    )
-                self.db_conn.commit()
-
-                new_cols = [
-                    ("form_matn", "INTEGER"),
-                    ("is_double_sided_matn", "BOOLEAN"),
-                    ("color_count_matn", "INTEGER"),
-                    ("zinc_size_matn", "TEXT"),
-                    ("form_jeld", "INTEGER"),
-                    ("is_double_sided_jeld", "BOOLEAN"),
-                    ("color_count_jeld", "INTEGER"),
-                    ("zinc_size_jeld", "TEXT"),
-                    ("unit_price_paper_matn", "REAL"),
-                    ("unit_price_paper_jeld", "REAL"),
-                    ("unit_price_zinc", "REAL"),
-                    ("waste_percent", "REAL DEFAULT 5"),
-                    ("book_width", "REAL"),
-                    ("book_height", "REAL"),
-                    ("paper_size", "TEXT"),
-                    ("orientation", "TEXT"),
-                    ("pages_per_sheet", "INTEGER"),
-                    ("total_pages", "INTEGER DEFAULT 0"),
-                    ("hazineh_horoofchini",    "REAL DEFAULT 0"),
-                    ("hazineh_mojawwez_ershad", "REAL DEFAULT 0"),
-                    ("hazineh_shabok",          "REAL DEFAULT 0"),
-                    ("hazineh_talakoobi",       "REAL DEFAULT 0"),
-                    ("hazineh_uv_mowzei",       "REAL DEFAULT 0"),
-                    ("hazineh_barjasteh",       "REAL DEFAULT 0"),
-                    ("book_type_preset",        "TEXT DEFAULT 'شومیز ساده'"),
-                    ("pricing_multiplier",      "REAL DEFAULT 2.5"),
-                    ("distribution_percent",    "REAL DEFAULT 35.0"),
-                ]
-                for col_name, col_def in new_cols:
-                    try:
-                        self.cursor.execute(
-                            f"ALTER TABLE project_details ADD COLUMN {col_name} {col_def}"
-                        )
-                        self.db_conn.commit()
-                    except sqlite3.OperationalError:
-                        pass  # column already exists
-
-            except sqlite3.Error as err:
-                QMessageBox.critical(
-                    self, "خطای دیتابیس",
-                    f"ارتباط با دیتابیس برقرار نشد.\nلطفاً فایل config.ini را بررسی کنید.\n\n{err}"
-                )
-                sys.exit(1)
 
     def _make_cost_row(self, field_name: str, readonly: bool = False) -> 'QWidget':
         """Creates a labeled row widget for a cost field and registers it."""
@@ -570,14 +413,11 @@ class BookCostCalculator(QMainWindow):
                             "نوع کاغذ جلد", "نوع چاپ جلد", "نوع رنگ جلد", "نوع زینک جلد"]
             
             category_items = {dtype: [] for dtype in dynamic_types}
-            if self.db_conn:
-                try:
-                    self.cursor.execute("SELECT category_name, item_value FROM categories")
-                    for row in self.cursor.fetchall():
-                        if row['category_name'] in category_items:
-                            category_items[row['category_name']].append(row['item_value'])
-                except Exception as e:
-                    print("Error pre-fetching categories:", e)
+            try:
+                for dtype in dynamic_types:
+                    category_items[dtype] = self.db.get_categories(dtype)
+            except Exception as e:
+                print("Error pre-fetching categories:", e)
 
             for dtype in dynamic_types:
                 combo = QComboBox()
@@ -775,14 +615,7 @@ class BookCostCalculator(QMainWindow):
             self._apply_preset("شومیز ساده", zero_hidden=False)
 
     def _get_zinc_price(self, zinc_size):
-        try:
-            self.cursor.execute(
-                "SELECT unit_price FROM zinc_prices WHERE zinc_size = ?", (zinc_size,)
-            )
-            row = self.cursor.fetchone()
-            return row['unit_price'] if row else 0.0
-        except sqlite3.Error:
-            return 0.0
+        return self.db.get_zinc_price(zinc_size)
 
     def _update_zinc_price_labels(self):
         for label, combo in [
@@ -860,15 +693,11 @@ class BookCostCalculator(QMainWindow):
             return
         price = spin.value()
         try:
-            self.cursor.execute(
-                "INSERT OR REPLACE INTO zinc_prices (zinc_size, unit_price) VALUES (?, ?)",
-                (zinc_size, price)
-            )
-            self.db_conn.commit()
+            self.db.save_zinc_price(zinc_size, price)
             self._update_zinc_price_labels()
             self.auto_calculate_costs()
             QMessageBox.information(self, "ذخیره شد", f"قیمت {zinc_size} ذخیره شد.")
-        except sqlite3.Error as err:
+        except Exception as err:
             QMessageBox.critical(self, "خطا", f"ذخیره قیمت زینک با خطا مواجه شد:\n{err}")
 
     def auto_calculate_costs(self, *args):
@@ -907,7 +736,7 @@ class BookCostCalculator(QMainWindow):
         self.cost_inputs['هزینه زینک'].setValue(total_zinc_cost)
 
     def open_paper_price_dialog(self, target):
-        dlg = PaperPriceDialog(self.db_conn, target, parent=self)
+        dlg = PaperPriceDialog(self.db, target, parent=self)
         dlg.setAttribute(Qt.WA_DeleteOnClose)
         if dlg.exec() == QDialog.Accepted:
             if target == "matn":
@@ -958,11 +787,7 @@ class BookCostCalculator(QMainWindow):
                 if current_text and widget.findText(current_text) == -1:
                     # It's a new entry, save to DB
                     try:
-                        self.cursor.execute(
-                            "INSERT OR IGNORE INTO categories (category_name, item_value) VALUES (?, ?)",
-                            (category, current_text)
-                        )
-                        self.db_conn.commit()
+                        self.db.save_category(category, current_text)
                         widget.addItem(current_text) # Add to current dropdown
                     except Exception as e:
                         print("Error saving category:", e)
@@ -1039,194 +864,89 @@ class BookCostCalculator(QMainWindow):
             total_cost = 0
             single_cost = 0
 
+        p = {
+            'title': title,
+            'subtitle': get_val('زیر عنوان کتاب'),
+            'creation_date': get_val('تاریخ'),
+            'qate': get_val('قطع'),
+            'tiraj': get_val('تیراژ'),
+            'royalty_percent': self.royalty_input.value(),
+            'total_cost': total_cost,
+            'single_book_cost': single_cost,
+        }
+
+        d = {
+            'noeh_kaghaz_matn': get_val('نوع کاغذ متن'),
+            'noeh_chap_matn': get_val('نوع چاپ متن'),
+            'noeh_rang_matn': get_val('نوع رنگ متن'),
+            'noeh_zink_matn': get_val('نوع زینک متن'),
+            'noeh_kaghaz_jeld': get_val('نوع کاغذ جلد'),
+            'noeh_chap_jeld': get_val('نوع چاپ جلد'),
+            'noeh_rang_jeld': get_val('نوع رنگ جلد'),
+            'noeh_zink_jeld': get_val('نوع زینک جلد'),
+            'form_matn': self.form_matn_spin.value(),
+            'is_double_sided_matn': int(self.double_sided_matn_chk.isChecked()),
+            'color_count_matn': 1 if self.color_matn_combo.currentIndex() == 0 else (2 if self.color_matn_combo.currentIndex() == 1 else 4),
+            'zinc_size_matn': self.zinc_size_matn_combo.currentText(),
+            'form_jeld': self.form_jeld_spin.value(),
+            'is_double_sided_jeld': int(self.double_sided_jeld_chk.isChecked()),
+            'color_count_jeld': 1 if self.color_jeld_combo.currentIndex() == 0 else (2 if self.color_jeld_combo.currentIndex() == 1 else 4),
+            'zinc_size_jeld': self.zinc_size_jeld_combo.currentText(),
+            'unit_price_paper_matn': self.unit_price_paper_matn_spin.value(),
+            'unit_price_paper_jeld': self.unit_price_paper_jeld_spin.value(),
+            'unit_price_zinc': 0,
+            'waste_percent': self.waste_percent_spin.value(),
+            'book_width': self.book_width_spin.value() if self.book_dims_row_widget.isVisible() else None,
+            'book_height': self.book_height_spin.value() if self.book_dims_row_widget.isVisible() else None,
+            'paper_size': self.paper_size_combo.currentText().replace('×', 'x'),
+            'orientation': self.orientation_label.text() or None,
+            'pages_per_sheet': self.form_matn_spin.value(),
+            'total_pages': self.total_pages_spin.value(),
+            'hazineh_talif': self.cost_inputs['هزینه تالیف'].value(),
+            'hazineh_tarjomeh': self.cost_inputs['هزینه ترجمه'].value(),
+            'hazineh_tasvir': self.cost_inputs['هزینه تصویرگری'].value(),
+            'hazineh_virayesh': self.cost_inputs['هزینه ویرایش'].value(),
+            'hazineh_tarahi_jeld': self.cost_inputs['هزینه طراحی جلد'].value(),
+            'hazineh_modiriat_atelieh': self.cost_inputs['هزینه مديريت آتليه'].value(),
+            'hazineh_zink': self.cost_inputs['هزینه زینک'].value(),
+            'hazineh_chap_matn': self.cost_inputs['هزینه چاپ متن'].value(),
+            'hazineh_chap_jeld': self.cost_inputs['هزینه چاپ جلد'].value(),
+            'hazineh_kaghaz_matn': self.cost_inputs['هزینه کاغذ متن'].value(),
+            'hazineh_kaghaz_jeld': self.cost_inputs['هزینه کاغذ جلد'].value(),
+            'hazineh_rokesh_salfon': self.cost_inputs['هزینه روکش سلفون'].value(),
+            'hazineh_moghava_maghzi': self.cost_inputs['هزینه مقوای مغذی'].value(),
+            'hazineh_ghaleb_letterpress': self.cost_inputs['هزینه قالب لترپرس'].value(),
+            'hazineh_ghaleb_diecut': self.cost_inputs['هزینه قالب دايكات'].value(),
+            'hazineh_khat_ta': self.cost_inputs['هزینه خط تا'].value(),
+            'hazineh_malzomat': self.cost_inputs['هزینه ملزومات'].value(),
+            'hazineh_jeldsazi': self.cost_inputs['هزینه جلدسازی'].value(),
+            'hazineh_sahafi': self.cost_inputs['هزینه صحافی'].value(),
+            'hazineh_boresh_bastebandi': self.cost_inputs['هزینه برش و بسته‌بندی'].value(),
+            'hazineh_haml_naghl': self.cost_inputs['هزینه حمل و نقل'].value(),
+            'hazineh_montaj': self.cost_inputs['هزینه مونتاژ'].value(),
+            'hazineh_horoofchini': self.cost_inputs['هزینه حروفچینی و صفحه‌آرایی'].value(),
+            'hazineh_mojawwez_ershad': self.cost_inputs['هزینه مجوز ارشاد'].value(),
+            'hazineh_shabok': self.cost_inputs['هزینه ثبت شابک'].value(),
+            'hazineh_talakoobi': self.cost_inputs['هزینه طلاکوبی'].value(),
+            'hazineh_uv_mowzei': self.cost_inputs['هزینه UV موضعی'].value(),
+            'hazineh_barjasteh': self.cost_inputs['هزینه برجسته‌کاری'].value(),
+            'book_type_preset': self.book_type_combo.currentText(),
+            'pricing_multiplier': self.pricing_multiplier_spin.value() if hasattr(self, 'pricing_multiplier_spin') else 2.5,
+            'distribution_percent': self.distribution_spin.value() if hasattr(self, 'distribution_spin') else 35.0,
+        }
+
         try:
-            # 1. Check if we are updating an existing project
             if hasattr(self, 'current_project_id') and self.current_project_id is not None:
-                # --- UPDATE existing project ---
-                query_projects = """
-                    UPDATE projects SET
-                        title = ?, subtitle = ?, creation_date = ?, qate = ?,
-                        tiraj = ?, royalty_percent = ?, total_cost = ?, single_book_cost = ?
-                    WHERE id = ?
-                """
-                val_projects = (
-                    title,
-                    get_val('زیر عنوان کتاب'),
-                    get_val('تاریخ'),
-                    get_val('قطع'),
-                    get_val('تیراژ'),
-                    self.royalty_input.value(),
-                    total_cost,
-                    single_cost,
-                    self.current_project_id
-                )
-                self.cursor.execute(query_projects, val_projects)
-
-                # Update project_details
-                query_details = """
-                    UPDATE project_details SET
-                        noeh_kaghaz_matn = ?, noeh_chap_matn = ?, noeh_rang_matn = ?, noeh_zink_matn = ?,
-                        noeh_kaghaz_jeld = ?, noeh_chap_jeld = ?, noeh_rang_jeld = ?, noeh_zink_jeld = ?,
-                        form_matn = ?, is_double_sided_matn = ?, color_count_matn = ?, zinc_size_matn = ?,
-                        form_jeld = ?, is_double_sided_jeld = ?, color_count_jeld = ?, zinc_size_jeld = ?,
-                        unit_price_paper_matn = ?, unit_price_paper_jeld = ?, unit_price_zinc = ?,
-                        waste_percent = ?,
-                        book_width = ?, book_height = ?, paper_size = ?, orientation = ?, pages_per_sheet = ?,
-                        total_pages = ?,
-                        hazineh_talif = ?, hazineh_tarjomeh = ?, hazineh_tasvir = ?, hazineh_virayesh = ?,
-                        hazineh_tarahi_jeld = ?, hazineh_modiriat_atelieh = ?, hazineh_zink = ?,
-                        hazineh_chap_matn = ?, hazineh_chap_jeld = ?, hazineh_kaghaz_matn = ?,
-                        hazineh_kaghaz_jeld = ?, hazineh_rokesh_salfon = ?, hazineh_moghava_maghzi = ?,
-                        hazineh_ghaleb_letterpress = ?, hazineh_ghaleb_diecut = ?, hazineh_khat_ta = ?,
-                        hazineh_malzomat = ?, hazineh_jeldsazi = ?, hazineh_sahafi = ?,
-                        hazineh_boresh_bastebandi = ?, hazineh_haml_naghl = ?, hazineh_montaj = ?,
-                        hazineh_horoofchini = ?, hazineh_mojawwez_ershad = ?, hazineh_shabok = ?,
-                        hazineh_talakoobi = ?, hazineh_uv_mowzei = ?, hazineh_barjasteh = ?,
-                        book_type_preset = ?, pricing_multiplier = ?, distribution_percent = ?
-                    WHERE project_id = ?
-                """
-                val_details = (
-                    get_val('نوع کاغذ متن'), get_val('نوع چاپ متن'), get_val('نوع رنگ متن'), get_val('نوع زینک متن'),
-                    get_val('نوع کاغذ جلد'), get_val('نوع چاپ جلد'), get_val('نوع رنگ جلد'), get_val('نوع زینک جلد'),
-                    self.form_matn_spin.value(), int(self.double_sided_matn_chk.isChecked()),
-                    1 if self.color_matn_combo.currentIndex() == 0 else (2 if self.color_matn_combo.currentIndex() == 1 else 4),
-                    self.zinc_size_matn_combo.currentText(),
-                    self.form_jeld_spin.value(), int(self.double_sided_jeld_chk.isChecked()),
-                    1 if self.color_jeld_combo.currentIndex() == 0 else (2 if self.color_jeld_combo.currentIndex() == 1 else 4),
-                    self.zinc_size_jeld_combo.currentText(),
-                    self.unit_price_paper_matn_spin.value(), self.unit_price_paper_jeld_spin.value(), 0,
-                    self.waste_percent_spin.value(),
-                    self.book_width_spin.value() if self.book_dims_row_widget.isVisible() else None,
-                    self.book_height_spin.value() if self.book_dims_row_widget.isVisible() else None,
-                    self.paper_size_combo.currentText().replace("×", "x"),
-                    self.orientation_label.text() or None,
-                    self.form_matn_spin.value(),
-                    self.total_pages_spin.value(),
-                    self.cost_inputs['هزینه تالیف'].value(), self.cost_inputs['هزینه ترجمه'].value(),
-                    self.cost_inputs['هزینه تصویرگری'].value(), self.cost_inputs['هزینه ویرایش'].value(),
-                    self.cost_inputs['هزینه طراحی جلد'].value(), self.cost_inputs['هزینه مديريت آتليه'].value(),
-                    self.cost_inputs['هزینه زینک'].value(), self.cost_inputs['هزینه چاپ متن'].value(),
-                    self.cost_inputs['هزینه چاپ جلد'].value(), self.cost_inputs['هزینه کاغذ متن'].value(),
-                    self.cost_inputs['هزینه کاغذ جلد'].value(), self.cost_inputs['هزینه روکش سلفون'].value(),
-                    self.cost_inputs['هزینه مقوای مغذی'].value(), self.cost_inputs['هزینه قالب لترپرس'].value(),
-                    self.cost_inputs['هزینه قالب دايكات'].value(), self.cost_inputs['هزینه خط تا'].value(),
-                    self.cost_inputs['هزینه ملزومات'].value(), self.cost_inputs['هزینه جلدسازی'].value(),
-                    self.cost_inputs['هزینه صحافی'].value(), self.cost_inputs['هزینه برش و بسته‌بندی'].value(),
-                    self.cost_inputs['هزینه حمل و نقل'].value(), self.cost_inputs['هزینه مونتاژ'].value(),
-                    self.cost_inputs['هزینه حروفچینی و صفحه‌آرایی'].value(),
-                    self.cost_inputs['هزینه مجوز ارشاد'].value(),
-                    self.cost_inputs['هزینه ثبت شابک'].value(),
-                    self.cost_inputs['هزینه طلاکوبی'].value(),
-                    self.cost_inputs['هزینه UV موضعی'].value(),
-                    self.cost_inputs['هزینه برجسته‌کاری'].value(),
-                    self.book_type_combo.currentText(),
-                    self.pricing_multiplier_spin.value() if hasattr(self, 'pricing_multiplier_spin') else 2.5,
-                    self.distribution_spin.value() if hasattr(self, 'distribution_spin') else 35.0,
-                    self.current_project_id
-                )
-                self.cursor.execute(query_details, val_details)
-
+                self.db.update_project(self.current_project_id, p, d)
             else:
-                # --- INSERT new project ---
-                query_projects = """
-                    INSERT INTO projects 
-                    (title, subtitle, creation_date, qate, tiraj, royalty_percent, total_cost, single_book_cost)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """
-                val_projects = (
-                    title,
-                    get_val('زیر عنوان کتاب'),
-                    get_val('تاریخ'),
-                    get_val('قطع'),
-                    get_val('تیراژ'),
-                    self.royalty_input.value(),
-                    total_cost,
-                    single_cost
-                )
-                self.cursor.execute(query_projects, val_projects)
-                project_id = self.cursor.lastrowid
+                self.current_project_id = self.db.insert_project(p, d)
 
-                # Insert project_details
-                query_details = """
-                    INSERT INTO project_details (
-                        project_id, noeh_kaghaz_matn, noeh_chap_matn, noeh_rang_matn, noeh_zink_matn,
-                        noeh_kaghaz_jeld, noeh_chap_jeld, noeh_rang_jeld, noeh_zink_jeld,
-                        form_matn, is_double_sided_matn, color_count_matn, zinc_size_matn,
-                        form_jeld, is_double_sided_jeld, color_count_jeld, zinc_size_jeld,
-                        unit_price_paper_matn, unit_price_paper_jeld, unit_price_zinc, waste_percent,
-                        book_width, book_height, paper_size, orientation, pages_per_sheet,
-                        total_pages,
-                        hazineh_talif, hazineh_tarjomeh, hazineh_tasvir, hazineh_virayesh,
-                        hazineh_tarahi_jeld, hazineh_modiriat_atelieh, hazineh_zink, hazineh_chap_matn,
-                        hazineh_chap_jeld, hazineh_kaghaz_matn, hazineh_kaghaz_jeld, hazineh_rokesh_salfon,
-                        hazineh_moghava_maghzi, hazineh_ghaleb_letterpress, hazineh_ghaleb_diecut,
-                        hazineh_khat_ta, hazineh_malzomat, hazineh_jeldsazi, hazineh_sahafi,
-                        hazineh_boresh_bastebandi, hazineh_haml_naghl, hazineh_montaj,
-                        hazineh_horoofchini, hazineh_mojawwez_ershad, hazineh_shabok,
-                        hazineh_talakoobi, hazineh_uv_mowzei, hazineh_barjasteh,
-                        book_type_preset, pricing_multiplier, distribution_percent
-                    ) VALUES (
-                        ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                        ?, ?, ?, ?, ?, ?,
-                        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                        ?, ?, ?, ?, ?, ?, ?, ?, ?
-                    )
-                """
-                val_details = (
-                    project_id,
-                    get_val('نوع کاغذ متن'), get_val('نوع چاپ متن'), get_val('نوع رنگ متن'), get_val('نوع زینک متن'),
-                    get_val('نوع کاغذ جلد'), get_val('نوع چاپ جلد'), get_val('نوع رنگ جلد'), get_val('نوع زینک جلد'),
-                    self.form_matn_spin.value(), int(self.double_sided_matn_chk.isChecked()),
-                    1 if self.color_matn_combo.currentIndex() == 0 else (2 if self.color_matn_combo.currentIndex() == 1 else 4),
-                    self.zinc_size_matn_combo.currentText(),
-                    self.form_jeld_spin.value(), int(self.double_sided_jeld_chk.isChecked()),
-                    1 if self.color_jeld_combo.currentIndex() == 0 else (2 if self.color_jeld_combo.currentIndex() == 1 else 4),
-                    self.zinc_size_jeld_combo.currentText(),
-                    self.unit_price_paper_matn_spin.value(), self.unit_price_paper_jeld_spin.value(), 0,
-                    self.waste_percent_spin.value(),
-                    self.book_width_spin.value() if self.book_dims_row_widget.isVisible() else None,
-                    self.book_height_spin.value() if self.book_dims_row_widget.isVisible() else None,
-                    self.paper_size_combo.currentText().replace("×", "x"),
-                    self.orientation_label.text() or None,
-                    self.form_matn_spin.value(),
-                    self.total_pages_spin.value(),
-                    self.cost_inputs['هزینه تالیف'].value(), self.cost_inputs['هزینه ترجمه'].value(),
-                    self.cost_inputs['هزینه تصویرگری'].value(), self.cost_inputs['هزینه ویرایش'].value(),
-                    self.cost_inputs['هزینه طراحی جلد'].value(), self.cost_inputs['هزینه مديريت آتليه'].value(),
-                    self.cost_inputs['هزینه زینک'].value(), self.cost_inputs['هزینه چاپ متن'].value(),
-                    self.cost_inputs['هزینه چاپ جلد'].value(), self.cost_inputs['هزینه کاغذ متن'].value(),
-                    self.cost_inputs['هزینه کاغذ جلد'].value(), self.cost_inputs['هزینه روکش سلفون'].value(),
-                    self.cost_inputs['هزینه مقوای مغذی'].value(), self.cost_inputs['هزینه قالب لترپرس'].value(),
-                    self.cost_inputs['هزینه قالب دايكات'].value(), self.cost_inputs['هزینه خط تا'].value(),
-                    self.cost_inputs['هزینه ملزومات'].value(), self.cost_inputs['هزینه جلدسازی'].value(),
-                    self.cost_inputs['هزینه صحافی'].value(), self.cost_inputs['هزینه برش و بسته‌بندی'].value(),
-                    self.cost_inputs['هزینه حمل و نقل'].value(), self.cost_inputs['هزینه مونتاژ'].value(),
-                    self.cost_inputs['هزینه حروفچینی و صفحه‌آرایی'].value(),
-                    self.cost_inputs['هزینه مجوز ارشاد'].value(),
-                    self.cost_inputs['هزینه ثبت شابک'].value(),
-                    self.cost_inputs['هزینه طلاکوبی'].value(),
-                    self.cost_inputs['هزینه UV موضعی'].value(),
-                    self.cost_inputs['هزینه برجسته‌کاری'].value(),
-                    self.book_type_combo.currentText(),
-                    self.pricing_multiplier_spin.value() if hasattr(self, 'pricing_multiplier_spin') else 2.5,
-                    self.distribution_spin.value() if hasattr(self, 'distribution_spin') else 35.0
-                )
-                self.cursor.execute(query_details, val_details)
-
-                # Store the new ID so subsequent saves update it
-                self.current_project_id = project_id
-
-            # Commit and refresh project list
-            self.db_conn.commit()
-            self.load_projects()  # reload the table to show changes
+            self.load_projects()
             now = jdatetime.datetime.now().strftime("%H:%M:%S")
             self.status_project_label.setText(title)
             self.status_save_label.setText(f"آخرین ذخیره: {now}")
             QMessageBox.information(self, "موفقیت", "اطلاعات پروژه با موفقیت ذخیره شد!")
-
-        except sqlite3.Error as err:
-            self.db_conn.rollback()
+        except Exception as err:
             QMessageBox.critical(self, "خطای ذخیره‌سازی", f"مشکلی در ذخیره اطلاعات پیش آمد:\n{err}")
         
     def setup_pricing_tab(self):
@@ -1605,15 +1325,7 @@ class BookCostCalculator(QMainWindow):
 
     def load_projects(self, filter_text=None):
         try:
-            if filter_text:
-                query = "SELECT id, title, creation_date, tiraj FROM projects WHERE title LIKE ? ORDER BY id DESC"
-                self.cursor.execute(query, ('%' + filter_text + '%',))
-            else:
-                query = "SELECT id, title, creation_date, tiraj FROM projects ORDER BY id DESC"
-                self.cursor.execute(query)
-            
-            results = self.cursor.fetchall()
-            
+            results = self.db.get_projects(filter_text or '')
             self.project_table.setUpdatesEnabled(False)
             self.project_table.setRowCount(len(results))
             for row_idx, row_data in enumerate(results):
@@ -1624,7 +1336,7 @@ class BookCostCalculator(QMainWindow):
             self.project_table.setUpdatesEnabled(True)
             if hasattr(self, 'project_stack'):
                 self.project_stack.setCurrentIndex(1 if results else 0)
-        except sqlite3.Error as err:
+        except Exception as err:
             QMessageBox.warning(self, "خطا", f"بارگذاری پروژه‌ها با خطا مواجه شد:\n{err}")
     
     def search_projects(self):
@@ -1643,16 +1355,11 @@ class BookCostCalculator(QMainWindow):
     def load_project_by_id(self, project_id):
         """Loads a project's data into the details tab given its ID."""
         try:
-            # Fetch main project info
-            self.cursor.execute("SELECT * FROM projects WHERE id = ?", (project_id,))
-            project = self.cursor.fetchone()
+            project = self.db.get_project(project_id)
             if not project:
                 QMessageBox.warning(self, "خطا", "پروژه‌ای با این شناسه یافت نشد.")
                 return
-
-            # Fetch detailed info
-            self.cursor.execute("SELECT * FROM project_details WHERE project_id = ?", (project_id,))
-            details = self.cursor.fetchone()
+            details = self.db.get_project_details(project_id)
 
             # Populate basic fields
             self.inputs['عنوان کتاب'].setText(project['title'])
@@ -1773,9 +1480,9 @@ class BookCostCalculator(QMainWindow):
             self.tabs.setCurrentIndex(1)  # Switch to details tab
             QMessageBox.information(self, "بارگذاری", "پروژه با موفقیت بارگذاری شد. پس از ویرایش می‌توانید ذخیره کنید.")
 
-        except sqlite3.Error as err:
+        except Exception as err:
             QMessageBox.critical(self, "خطا", f"بارگذاری پروژه با خطا مواجه شد:\n{err}")
-    
+
     def load_selected_project(self):
         """Opens the project that is currently selected in the table."""
         current_row = self.project_table.currentRow()
@@ -1884,11 +1591,7 @@ class BookCostCalculator(QMainWindow):
 
         # 4. Delete from database
         try:
-            # Delete details first (if no ON DELETE CASCADE)
-            self.cursor.execute("DELETE FROM project_details WHERE project_id = ?", (project_id,))
-            # Delete main project
-            self.cursor.execute("DELETE FROM projects WHERE id = ?", (project_id,))
-            self.db_conn.commit()
+            self.db.delete_project(project_id)
 
             # 5. Refresh the project table
             self.load_projects()
@@ -1899,8 +1602,7 @@ class BookCostCalculator(QMainWindow):
 
             QMessageBox.information(self, "موفقیت", "پروژه با موفقیت حذف شد.")
 
-        except sqlite3.Error as err:
-            self.db_conn.rollback()
+        except Exception as err:
             QMessageBox.critical(self, "خطا", f"حذف پروژه با مشکل مواجه شد:\n{err}")
             
     def setup_paper_calc_tab(self):
@@ -2058,30 +1760,24 @@ class BookCostCalculator(QMainWindow):
         price = self.paper_price_spin.value()
 
         try:
+            data = {
+                'paper_type': paper_type, 'formula_type': formula,
+                'weight': weight, 'height': height, 'length': length,
+                'bundle_count': bundle_count, 'bundle_weight': bundle_weight,
+                'price': price, 'unit_price': unit_price,
+            }
             if hasattr(self, 'editing_paper_calc_id') and self.editing_paper_calc_id is not None:
-                self.cursor.execute("""
-                    UPDATE paper_calculations
-                    SET paper_type=?, formula_type=?, weight=?, height=?, length=?,
-                        bundle_count=?, bundle_weight=?, price=?, unit_price=?
-                    WHERE id=?
-                """, (paper_type, formula, weight, height, length, bundle_count, bundle_weight, price, unit_price, self.editing_paper_calc_id))
+                self.db.update_paper_calculation(self.editing_paper_calc_id, data)
             else:
-                self.cursor.execute("""
-                    INSERT INTO paper_calculations
-                    (paper_type, formula_type, weight, height, length, bundle_count, bundle_weight, price, unit_price)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (paper_type, formula, weight, height, length, bundle_count, bundle_weight, price, unit_price))
-
-            self.db_conn.commit()
+                self.db.insert_paper_calculation(data)
             self.load_paper_calculations()
             self.editing_paper_calc_id = None
-        except sqlite3.Error as err:
+        except Exception as err:
             QMessageBox.critical(self, "خطا", f"ذخیره محاسبه با خطا مواجه شد:\n{err}")
 
     def load_paper_calculations(self):
         try:
-            self.cursor.execute("SELECT * FROM paper_calculations ORDER BY id DESC")
-            rows = self.cursor.fetchall()
+            rows = self.db.get_paper_calculations()
             self.paper_calc_table.setRowCount(0)
             for row in rows:
                 row_idx = self.paper_calc_table.rowCount()
@@ -2099,7 +1795,7 @@ class BookCostCalculator(QMainWindow):
                 self.paper_calc_table.setItem(row_idx, 9, QTableWidgetItem(f"{row['unit_price']:,.2f}"))
 
             self.paper_calc_table.hideColumn(0) # Hide ID
-        except sqlite3.Error as err:
+        except Exception as err:
             QMessageBox.warning(self, "خطا", f"بارگذاری محاسبات با خطا مواجه شد:\n{err}")
 
     def load_selected_paper_calc(self):
@@ -2135,11 +1831,10 @@ class BookCostCalculator(QMainWindow):
                                     QMessageBox.Yes | QMessageBox.No)
         if reply == QMessageBox.Yes:
             try:
-                self.cursor.execute("DELETE FROM paper_calculations WHERE id=?", (calc_id,))
-                self.db_conn.commit()
+                self.db.delete_paper_calculation(calc_id)
                 self.load_paper_calculations()
                 self.editing_paper_calc_id = None
-            except sqlite3.Error as err:
+            except Exception as err:
                 QMessageBox.critical(self, "خطا", f"حذف با خطا مواجه شد:\n{err}")
 
     def export_paper_to_defaults(self):
@@ -2178,26 +1873,13 @@ class BookCostCalculator(QMainWindow):
             field = cost_field_combo.currentText()
 
             try:
-                # Check if it already exists
-                self.cursor.execute("SELECT id FROM default_cost_mappings WHERE category_name=? AND item_value=?", (cat, val))
-                existing = self.cursor.fetchone()
-
-                if existing:
-                    self.cursor.execute("UPDATE default_cost_mappings SET target_cost_field=?, default_cost=? WHERE id=?",
-                                        (field, unit_price, existing['id']))
-                else:
-                    self.cursor.execute("INSERT INTO default_cost_mappings (category_name, item_value, target_cost_field, default_cost) VALUES (?, ?, ?, ?)",
-                                        (cat, val, field, unit_price))
-
-                # Add to categories if needed
-                self.cursor.execute("INSERT OR IGNORE INTO categories (category_name, item_value) VALUES (?, ?)", (cat, val))
-
-                self.db_conn.commit()
+                self.db.upsert_default_mapping(cat, val, field, unit_price)
+                self.db.save_category(cat, val)
                 self.load_default_costs_table()
                 self.populate_default_value_combo(self.def_cat_combo.currentText())
                 QMessageBox.information(self, "موفقیت", "انتقال به قیمت‌های پایه با موفقیت انجام شد.")
                 self.tabs.setCurrentIndex(6) # Switch to defaults tab
-            except sqlite3.Error as err:
+            except Exception as err:
                 QMessageBox.critical(self, "خطا", f"انتقال با خطا مواجه شد:\n{err}")
 
     def setup_default_costs_tab(self):
@@ -2284,13 +1966,8 @@ class BookCostCalculator(QMainWindow):
     def populate_default_value_combo(self, category_name):
         """Fills the value combo with existing items from the chosen category."""
         self.def_value_combo.clear()
-        if not self.db_conn:
-            return
         try:
-            self.cursor.execute(
-                "SELECT item_value FROM categories WHERE category_name = ?", (category_name,)
-            )
-            items = [row['item_value'] for row in self.cursor.fetchall()]
+            items = self.db.get_categories(category_name)
             self.def_value_combo.addItems(items)
         except Exception as e:
             print("Error populating value combo:", e)
@@ -2298,11 +1975,7 @@ class BookCostCalculator(QMainWindow):
     def load_default_costs_table(self):
         """Reloads the table showing all default cost mappings."""
         try:
-            self.cursor.execute(
-                "SELECT id, category_name, item_value, target_cost_field, default_cost "
-                "FROM default_cost_mappings ORDER BY category_name, item_value"
-            )
-            rows = self.cursor.fetchall()
+            rows = self.db.get_default_cost_mappings()
             self.defaults_table.setUpdatesEnabled(False)
             self.defaults_table.setRowCount(len(rows))
             for i, row in enumerate(rows):
@@ -2315,7 +1988,7 @@ class BookCostCalculator(QMainWindow):
                 # Store the id in the first cell's data for later use
                 self.defaults_table.item(i, 0).setData(Qt.UserRole, row['id'])
             self.defaults_table.setUpdatesEnabled(True)
-        except sqlite3.Error as err:
+        except Exception as err:
             QMessageBox.warning(self, "خطا", f"بارگذاری قیمت‌های پایه با خطا مواجه شد:\n{err}")
 
     def add_default_cost_mapping(self):
@@ -2328,22 +2001,11 @@ class BookCostCalculator(QMainWindow):
         cost_field = self.def_cost_field_combo.currentText()
         cost = self.def_cost_spin.value()
         try:
-            self.cursor.execute(
-                "INSERT INTO default_cost_mappings (category_name, item_value, target_cost_field, default_cost) "
-                "VALUES (?, ?, ?, ?)",
-                (cat, val, cost_field, cost)
-            )
-            self.db_conn.commit()
+            self.db.insert_default_mapping(cat, val, cost_field, cost)
+            self.db.save_category(cat, val)
             self.load_default_costs_table()
-            # also add the new item_value to the categories table if not present
-            self.cursor.execute(
-                "INSERT OR IGNORE INTO categories (category_name, item_value) VALUES (?, ?)",
-                (cat, val)
-            )
-            self.db_conn.commit()
-            # refresh the value combo
             self.populate_default_value_combo(cat)
-        except sqlite3.Error as err:
+        except Exception as err:
             QMessageBox.critical(self, "خطا", f"افزودن قیمت پایه با خطا مواجه شد:\n{err}")
 
     def load_selected_default_for_edit(self):
@@ -2379,16 +2041,11 @@ class BookCostCalculator(QMainWindow):
         cost_field = self.def_cost_field_combo.currentText()
         cost = self.def_cost_spin.value()
         try:
-            self.cursor.execute(
-                "UPDATE default_cost_mappings SET category_name=?, item_value=?, "
-                "target_cost_field=?, default_cost=? WHERE id=?",
-                (cat, val, cost_field, cost, self.editing_default_id)
-            )
-            self.db_conn.commit()
+            self.db.update_default_mapping(self.editing_default_id, cat, val, cost_field, cost)
             self.load_default_costs_table()
             self.populate_default_value_combo(cat)
             self.editing_default_id = None
-        except sqlite3.Error as err:
+        except Exception as err:
             QMessageBox.critical(self, "خطا", f"ویرایش با خطا مواجه شد:\n{err}")
 
     def delete_default_cost_mapping(self):
@@ -2404,39 +2061,29 @@ class BookCostCalculator(QMainWindow):
         if reply != QMessageBox.Yes:
             return
         try:
-            self.cursor.execute("DELETE FROM default_cost_mappings WHERE id = ?", (mapping_id,))
-            self.db_conn.commit()
+            self.db.delete_default_mapping(mapping_id)
             self.load_default_costs_table()
-        except sqlite3.Error as err:
+        except Exception as err:
             QMessageBox.critical(self, "خطا", f"حذف با خطا مواجه شد:\n{err}")
             
             
     def apply_default_cost(self, category_name, selected_text):
         """Looks up a default cost mapping and fills the target cost field."""
-        if not selected_text or not self.db_conn:
+        if not selected_text:
             return
         try:
-            self.cursor.execute(
-                "SELECT target_cost_field, default_cost FROM default_cost_mappings "
-                "WHERE category_name = ? AND item_value = ?",
-                (category_name, selected_text)
-            )
-            mapping = self.cursor.fetchone()
+            mapping = self.db.get_default_cost(category_name, selected_text)
             if mapping:
                 cost_field = mapping['target_cost_field']
                 cost_value = mapping['default_cost']
                 if cost_field in self.cost_inputs:
                     self.cost_inputs[cost_field].setValue(cost_value)
-        except sqlite3.Error as err:
+        except Exception as err:
             print("Error applying default cost:", err)
             
             
     def import_default_prices(self):
         """Loops through all dynamic combos, reads their current text, and fills the associated default cost if a mapping exists."""
-        if not self.db_conn:
-            return
-
-        # Map from Persian category name to widget key
         category_map = {
             'نوع کاغذ متن': 'نوع کاغذ متن',
             'نوع چاپ متن': 'نوع چاپ متن',
@@ -2445,49 +2092,27 @@ class BookCostCalculator(QMainWindow):
             'نوع کاغذ جلد': 'نوع کاغذ جلد',
             'نوع چاپ جلد': 'نوع چاپ جلد',
             'نوع رنگ جلد': 'نوع رنگ جلد',
-            'نوع زینک جلد': 'نوع زینک جلد'
+            'نوع زینک جلد': 'نوع زینک جلد',
         }
-
-        updated_count = 0
-
-        # ⚡ Bolt Optimization: Batch queries to avoid N+1 problem inside loop
-        # Instead of 8 individual SELECT queries, we collect requirements and
-        # run a single database call, improving UI responsiveness.
-        query_conditions = []
-        query_params = []
-        requested_items = [] # Keep track to verify what we asked for
-
+        items = []
         for category, widget_key in category_map.items():
-            widget = self.inputs[widget_key]
-            selected_text = widget.currentText().strip()
-            if not selected_text:
-                continue
-
-            query_conditions.append("(category_name = ? AND item_value = ?)")
-            query_params.extend([category, selected_text])
-            requested_items.append((category, selected_text))
-
-        if query_conditions:
-            try:
-                query = f"""
-                    SELECT category_name, item_value, target_cost_field, default_cost
-                    FROM default_cost_mappings
-                    WHERE {' OR '.join(query_conditions)}
-                """
-                self.cursor.execute(query, tuple(query_params))
-                mappings = self.cursor.fetchall()
-
-                # Apply results
-                for mapping in mappings:
-                    cost_field = mapping['target_cost_field']
-                    cost_value = mapping['default_cost']
-                    if cost_field in self.cost_inputs:
-                        self.cost_inputs[cost_field].setValue(cost_value)
-                        updated_count += 1
-
-            except sqlite3.Error as err:
-                print("Error importing default:", err)
-
+            text = self.inputs[widget_key].currentText().strip()
+            if text:
+                items.append((category, text))
+        if not items:
+            QMessageBox.information(self, "اطلاعات", "هیچ تطابقی یافت نشد.")
+            return
+        try:
+            mappings = self.db.get_default_costs_batch(items)
+            updated_count = 0
+            for mapping in mappings:
+                cost_field = mapping['target_cost_field']
+                if cost_field in self.cost_inputs:
+                    self.cost_inputs[cost_field].setValue(mapping['default_cost'])
+                    updated_count += 1
+        except Exception as err:
+            print("Error importing defaults:", err)
+            return
         if updated_count > 0:
             QMessageBox.information(self, "موفقیت", f"{updated_count} قیمت پایه‌ای بارگذاری شد.")
         else:
