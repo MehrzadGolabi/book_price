@@ -2035,11 +2035,30 @@ class BookCostCalculator(QMainWindow):
                     'هزینه صحافی': 'hazineh_sahafi',
                     'هزینه برش و بسته‌بندی': 'hazineh_boresh_bastebandi',
                     'هزینه حمل و نقل': 'hazineh_haml_naghl',
-                    'هزینه مونتاژ': 'hazineh_montaj'
+                    'هزینه مونتاژ': 'hazineh_montaj',
+                    'هزینه حروفچینی و صفحه‌آرایی': 'hazineh_horoofchini',
+                    'هزینه مجوز ارشاد': 'hazineh_mojawwez_ershad',
+                    'هزینه ثبت شابک': 'hazineh_shabok',
+                    'هزینه طلاکوبی': 'hazineh_talakoobi',
+                    'هزینه UV موضعی': 'hazineh_uv_mowzei',
+                    'هزینه برجسته‌کاری': 'hazineh_barjasteh',
                 }
                 for persian_key, col_name in cost_mapping.items():
                     if col_name in details and details[col_name] is not None:
                         self.cost_inputs[persian_key].setValue(float(details[col_name]))
+
+                # Restore preset — block signals to avoid zeroing loaded values
+                preset = details['book_type_preset'] if 'book_type_preset' in details.keys() and details['book_type_preset'] else 'شومیز ساده'
+                self.book_type_combo.blockSignals(True)
+                self.book_type_combo.setCurrentText(preset)
+                self.book_type_combo.blockSignals(False)
+                self._apply_preset(preset, zero_hidden=False)
+
+                # Restore pricing settings if Tab 3 is initialized
+                if hasattr(self, 'pricing_multiplier_spin') and 'pricing_multiplier' in details.keys() and details['pricing_multiplier'] is not None:
+                    self.pricing_multiplier_spin.setValue(float(details['pricing_multiplier']))
+                if hasattr(self, 'distribution_spin') and 'distribution_percent' in details.keys() and details['distribution_percent'] is not None:
+                    self.distribution_spin.setValue(float(details['distribution_percent']))
 
             # Store the project ID for possible update later
             self.current_project_id = project_id
@@ -2108,6 +2127,15 @@ class BookCostCalculator(QMainWindow):
             spin.setValue(0.0)
 
         self.royalty_input.setValue(0.0)
+
+        self.book_type_combo.blockSignals(True)
+        self.book_type_combo.setCurrentText("شومیز ساده")
+        self.book_type_combo.blockSignals(False)
+        self._apply_preset("شومیز ساده", zero_hidden=False)
+        if hasattr(self, 'pricing_multiplier_spin'):
+            self.pricing_multiplier_spin.setValue(2.5)
+        if hasattr(self, 'distribution_spin'):
+            self.distribution_spin.setValue(35.0)
 
         # Clear calculation labels
         self.lbl_final_total.setText("0")
