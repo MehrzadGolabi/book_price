@@ -628,6 +628,7 @@ class BookCostCalculator(QMainWindow):
         self.setLayoutDirection(Qt.RightToLeft)
         
         self.db_conn = None
+        self.cost_inputs: dict = {}
         self.cost_input_rows: dict = {}
         self.cost_group_boxes: dict = {}
         self.connect_db()
