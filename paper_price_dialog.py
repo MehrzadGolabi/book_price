@@ -1,5 +1,4 @@
-import sqlite3
-
+from db import BookDatabase
 from PySide6.QtWidgets import (
     QDialog, QGroupBox, QVBoxLayout, QHBoxLayout, QFormLayout,
     QTableWidget, QHeaderView, QTableWidgetItem,
@@ -16,9 +15,9 @@ class PaperPriceDialog(QDialog):
         "دستی"
     )
 
-    def __init__(self, db_conn, target, parent=None):
+    def __init__(self, db: BookDatabase, target, parent=None):
         super().__init__(parent)
-        self.db_conn = db_conn
+        self.db = db
         self.target = target          # "matn" or "jeld"
         self.result_value = 0.0
         self.setLayoutDirection(Qt.RightToLeft)
@@ -171,13 +170,8 @@ class PaperPriceDialog(QDialog):
 
     def _load_library(self):
         try:
-            cursor = self.db_conn.cursor()
-            cursor.execute(
-                "SELECT id, paper_type, formula_type, unit_price "
-                "FROM paper_calculations ORDER BY id DESC"
-            )
-            rows = cursor.fetchall()
-        except sqlite3.Error:
+            rows = self.db.get_paper_calculations()
+        except Exception:
             rows = []
 
         self.lib_table.setRowCount(0)
@@ -226,14 +220,12 @@ class PaperPriceDialog(QDialog):
         count = self.dlg_count_spin.value() if idx == 1 else 0
         prices = [self.dlg_price1_spin.value(), self.dlg_price2_spin.value(), self.dlg_manual_spin.value()]
         try:
-            cursor = self.db_conn.cursor()
-            cursor.execute(
-                "INSERT INTO paper_calculations "
-                "(paper_type, formula_type, weight, height, length, bundle_count, bundle_weight, price, unit_price) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (name, self.FORMULA_LABELS[idx], w, h, length, count, 0, prices[idx], self.result_value)
-            )
-            self.db_conn.commit()
+            self.db.insert_paper_calculation({
+                'paper_type': name, 'formula_type': self.FORMULA_LABELS[idx],
+                'weight': w, 'height': h, 'length': length,
+                'bundle_count': count, 'bundle_weight': 0,
+                'price': prices[idx], 'unit_price': self.result_value,
+            })
             if hasattr(self.parent(), 'load_paper_calculations'):
                 self.parent().load_paper_calculations()
         except Exception as e:
