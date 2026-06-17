@@ -849,10 +849,10 @@ class BookCostCalculator(QMainWindow):
         # 1. Setup Menu Bar (Settings menu for advanced tabs)
         settings_menu = self.menuBar().addMenu("تنظیمات")
         paper_calc_menu_action = QAction("محاسبات پیش‌پردازش کاغذ", self)
-        paper_calc_menu_action.triggered.connect(lambda: self.tabs.setCurrentIndex(4))
+        paper_calc_menu_action.triggered.connect(lambda: self.tabs.setCurrentIndex(5))
         settings_menu.addAction(paper_calc_menu_action)
         defaults_menu_action = QAction("مدیریت قیمت‌های پایه", self)
-        defaults_menu_action.triggered.connect(lambda: self.tabs.setCurrentIndex(5))
+        defaults_menu_action.triggered.connect(lambda: self.tabs.setCurrentIndex(6))
         settings_menu.addAction(defaults_menu_action)
 
         # 2. Setup Toolbar (Open → Save | Import | Delete → Exit)
@@ -898,20 +898,23 @@ class BookCostCalculator(QMainWindow):
         # Create Tab Widgets
         self.tab_project = QWidget()
         self.tab_details = QWidget()
+        self.tab_pricing = QWidget()
         self.tab_calc = QWidget()
         self.tab_report = QWidget()
         self.tab_paper_calc = QWidget()
         self.tab_defaults = QWidget()
 
-        self.tabs.addTab(self.tab_project, "مدیریت پروژه‌ها")
-        self.tabs.addTab(self.tab_details, "ورود اطلاعات و هزینه‌ها")
-        self.tabs.addTab(self.tab_calc, "محاسبات نهایی")
-        self.tabs.addTab(self.tab_report, "گزارش‌گیری (PDF)")
+        self.tabs.addTab(self.tab_project,    "مدیریت پروژه‌ها")
+        self.tabs.addTab(self.tab_details,    "ورود اطلاعات و هزینه‌ها")
+        self.tabs.addTab(self.tab_pricing,    "قیمت‌گذاری و سودآوری")
+        self.tabs.addTab(self.tab_calc,       "محاسبات نهایی")
+        self.tabs.addTab(self.tab_report,     "گزارش‌گیری (PDF)")
         self.tabs.addTab(self.tab_paper_calc, "محاسبات پیش‌پردازش کاغذ")
-        self.tabs.addTab(self.tab_defaults, "مدیریت قیمت‌های پایه")
+        self.tabs.addTab(self.tab_defaults,   "مدیریت قیمت‌های پایه")
 
         self.setup_project_tab()
         self.setup_details_tab()
+        self.setup_pricing_tab()
         self.setup_calc_tab()
         self.setup_report_tab()
         self.setup_paper_calc_tab()
@@ -1427,9 +1430,12 @@ class BookCostCalculator(QMainWindow):
         
         # Update the chart
         self.update_chart()
-        
+
+        # Update the pricing tab
+        self._refresh_pricing_tab()
+
         # Switch to calculation tab
-        self.tabs.setCurrentIndex(2)
+        self.tabs.setCurrentIndex(3)
         
         #save the project to the database
         self.save_project_to_db()
@@ -2678,7 +2684,7 @@ class BookCostCalculator(QMainWindow):
                 self.load_default_costs_table()
                 self.populate_default_value_combo(self.def_cat_combo.currentText())
                 QMessageBox.information(self, "موفقیت", "انتقال به قیمت‌های پایه با موفقیت انجام شد.")
-                self.tabs.setCurrentIndex(5) # Switch to defaults tab
+                self.tabs.setCurrentIndex(6) # Switch to defaults tab
             except sqlite3.Error as err:
                 QMessageBox.critical(self, "خطا", f"انتقال با خطا مواجه شد:\n{err}")
 
