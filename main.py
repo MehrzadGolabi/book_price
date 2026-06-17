@@ -949,6 +949,13 @@ class BookCostCalculator(QMainWindow):
             scroll_layout = QVBoxLayout(scroll_content)
 
             form_layout = QFormLayout()
+
+            # ── Preset selector ───────────────────────────────────────────────
+            self.book_type_combo = QComboBox()
+            self.book_type_combo.addItems(list(self.BOOK_TYPE_PRESETS.keys()))
+            self.book_type_combo.setCurrentText("شومیز ساده")
+            form_layout.addRow("نوع کتاب:", self.book_type_combo)
+
             self.inputs = {}
 
             # --- Basic Info Section ---
@@ -1046,7 +1053,7 @@ class BookCostCalculator(QMainWindow):
                 form_layout.addRow(dtype + ":", combo)
 
             # --- Base Paper & Zinc Calculations GroupBox ---
-            self.calc_group = QGroupBox("محاسبات هوشمند کاغذ و زینک")
+            self.calc_group = QGroupBox("② پیش از چاپ — محاسبات هوشمند کاغذ و زینک")
             calc_layout = QFormLayout()
 
             # Text Setup
@@ -1125,30 +1132,44 @@ class BookCostCalculator(QMainWindow):
             self.calc_group.setLayout(calc_layout)
             form_layout.addRow(self.calc_group)
 
-            # --- Detailed Cost Inputs ---
-            cost_types = [
-                "هزینه تالیف", "هزینه ترجمه", "هزینه تصویرگری", "هزینه ویرایش", 
-                "هزینه طراحی جلد", "هزینه مديريت آتليه", "هزینه زینک", "هزینه چاپ متن", 
-                "هزینه چاپ جلد", "هزینه کاغذ متن", "هزینه کاغذ جلد", "هزینه روکش سلفون", 
-                "هزینه مقوای مغذی", "هزینه قالب لترپرس", "هزینه قالب دايكات", "هزینه خط تا", 
-                "هزینه ملزومات", "هزینه جلدسازی", "هزینه صحافی", "هزینه برش و بسته‌بندی", 
-                "هزینه حمل و نقل", "هزینه مونتاژ"
-            ]
+            # --- Detailed Cost Inputs (5 GroupBoxes) ---
 
-            self.cost_inputs = {}
-            for ctype in cost_types:
-                spin = QDoubleSpinBox()
-                spin.setMaximum(9999999999.99)
-                spin.setGroupSeparatorShown(True)
-                spin.setDecimals(0)
-                spin.lineEdit().setAlignment(Qt.AlignCenter) 
-                self.cost_inputs[ctype] = spin
-                form_layout.addRow(ctype + ":", spin)
-                
-            # Protect auto-calculated fields
-            self.cost_inputs['هزینه کاغذ متن'].setReadOnly(True)
-            self.cost_inputs['هزینه کاغذ جلد'].setReadOnly(True)
-            self.cost_inputs['هزینه زینک'].setReadOnly(True)
+            # ── Group ①: خلاقیت و تحریریه ─────────────────────────────────
+            grp1 = QGroupBox("① خلاقیت و تحریریه")
+            grp1_layout = QVBoxLayout(grp1)
+            grp1_layout.setSpacing(2)
+            for fname in self.COST_GROUPS["خلاقیت و تحریریه"]:
+                grp1_layout.addWidget(self._make_cost_row(fname))
+            form_layout.addRow(grp1)
+            self.cost_group_boxes["خلاقیت و تحریریه"] = grp1
+
+            # ── Group ③: چاپ و مواد ───────────────────────────────────────
+            grp3 = QGroupBox("③ چاپ و مواد")
+            grp3_layout = QVBoxLayout(grp3)
+            grp3_layout.setSpacing(2)
+            readonly_auto = {"هزینه زینک", "هزینه کاغذ متن", "هزینه کاغذ جلد"}
+            for fname in self.COST_GROUPS["چاپ و مواد"]:
+                grp3_layout.addWidget(self._make_cost_row(fname, readonly=fname in readonly_auto))
+            form_layout.addRow(grp3)
+            self.cost_group_boxes["چاپ و مواد"] = grp3
+
+            # ── Group ④: تکمیل و صحافی ───────────────────────────────────
+            grp4 = QGroupBox("④ تکمیل و صحافی")
+            grp4_layout = QVBoxLayout(grp4)
+            grp4_layout.setSpacing(2)
+            for fname in self.COST_GROUPS["تکمیل و صحافی"]:
+                grp4_layout.addWidget(self._make_cost_row(fname))
+            form_layout.addRow(grp4)
+            self.cost_group_boxes["تکمیل و صحافی"] = grp4
+
+            # ── Group ⑤: اداری و مجوزها ─────────────────────────────────
+            grp5 = QGroupBox("⑤ اداری و مجوزها")
+            grp5_layout = QVBoxLayout(grp5)
+            grp5_layout.setSpacing(2)
+            for fname in self.COST_GROUPS["اداری و مجوزها"]:
+                grp5_layout.addWidget(self._make_cost_row(fname))
+            form_layout.addRow(grp5)
+            self.cost_group_boxes["اداری و مجوزها"] = grp5
 
             self.royalty_input = QDoubleSpinBox()
             self.royalty_input.setSuffix(" %")
@@ -1178,6 +1199,9 @@ class BookCostCalculator(QMainWindow):
             self.inputs['قطع'].currentIndexChanged.connect(self.suggest_optimal_layout)
             self.total_pages_spin.valueChanged.connect(self.suggest_optimal_layout)
             self.double_sided_matn_chk.toggled.connect(self.suggest_optimal_layout)
+            self.book_type_combo.currentTextChanged.connect(
+                lambda name: self._apply_preset(name, zero_hidden=True)
+            )
 
             # Standard auto-calculation signals
             widgets_to_connect = [
@@ -1210,6 +1234,8 @@ class BookCostCalculator(QMainWindow):
             self._update_zinc_price_labels()
             self.suggest_optimal_layout()
             self._refresh_layout_widget()
+            # Apply default preset without zeroing (fields are already zero)
+            self._apply_preset("شومیز ساده", zero_hidden=False)
 
     def _get_zinc_price(self, zinc_size):
         try:
