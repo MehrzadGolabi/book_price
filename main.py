@@ -1713,6 +1713,113 @@ class BookCostCalculator(QMainWindow):
             self.db_conn.rollback()
             QMessageBox.critical(self, "خطای ذخیره‌سازی", f"مشکلی در ذخیره اطلاعات پیش آمد:\n{err}")
         
+    def setup_pricing_tab(self):
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        content = QWidget()
+        content.setLayoutDirection(Qt.RightToLeft)
+        main_vbox = QVBoxLayout(content)
+        main_vbox.setSpacing(12)
+
+        # ── Part A: Suggested cover price ────────────────────────────────
+        grp_a = QGroupBox("قیمت‌گذاری پیشنهادی")
+        grp_a_form = QFormLayout(grp_a)
+
+        self.pricing_multiplier_spin = QDoubleSpinBox()
+        self.pricing_multiplier_spin.setRange(1.0, 5.0)
+        self.pricing_multiplier_spin.setSingleStep(0.1)
+        self.pricing_multiplier_spin.setDecimals(1)
+        self.pricing_multiplier_spin.setValue(2.5)
+        grp_a_form.addRow("ضریب قیمت‌گذاری:", self.pricing_multiplier_spin)
+
+        self.lbl_cover_price = QLabel("—")
+        self.lbl_cover_price.setAlignment(Qt.AlignCenter)
+        self.lbl_cover_price.setStyleSheet(
+            "font-size: 20px; font-weight: bold; color: #4caf50;"
+            "background-color: #1a2a1a; padding: 10px; border-radius: 6px;"
+        )
+        grp_a_form.addRow("قیمت پشت جلد پیشنهادی:", self.lbl_cover_price)
+
+        breakdown_container = QWidget()
+        self.breakdown_layout = QHBoxLayout(breakdown_container)
+        self.breakdown_layout.setContentsMargins(0, 0, 0, 0)
+        self.breakdown_layout.setSpacing(2)
+        self._breakdown_frames = {}
+        colors = {
+            "production":   "#2196f3",
+            "distribution": "#ff9800",
+            "royalty":      "#9c27b0",
+            "publisher":    "#4caf50",
+        }
+        labels_fa = {
+            "production": "تولید", "distribution": "توزیع",
+            "royalty": "حق تالیف", "publisher": "سود ناشر",
+        }
+        for key, color in colors.items():
+            frame = QLabel(labels_fa[key])
+            frame.setAlignment(Qt.AlignCenter)
+            frame.setStyleSheet(
+                f"background-color: {color}; color: white; font-size: 10px;"
+                "border-radius: 3px; padding: 4px;"
+            )
+            frame.setMinimumHeight(32)
+            self.breakdown_layout.addWidget(frame, 1)
+            self._breakdown_frames[key] = frame
+        grp_a_form.addRow("توزیع قیمت پشت جلد:", breakdown_container)
+
+        self.distribution_spin = QDoubleSpinBox()
+        self.distribution_spin.setRange(0, 70)
+        self.distribution_spin.setSingleStep(1)
+        self.distribution_spin.setDecimals(0)
+        self.distribution_spin.setValue(35.0)
+        self.distribution_spin.setSuffix(" %")
+        grp_a_form.addRow("سهم کتابفروشی / توزیع:", self.distribution_spin)
+
+        main_vbox.addWidget(grp_a)
+
+        # ── Part B: Break-even ───────────────────────────────────────────
+        grp_b = QGroupBox("نقطه سر به سر")
+        grp_b_form = QFormLayout(grp_b)
+
+        self.lbl_total_project_cost = QLabel("—")
+        grp_b_form.addRow("هزینه کل پروژه:", self.lbl_total_project_cost)
+
+        self.lbl_net_per_copy = QLabel("—")
+        grp_b_form.addRow("درآمد خالص ناشر (هر جلد):", self.lbl_net_per_copy)
+
+        self.lbl_break_even = QLabel("—")
+        self.lbl_break_even.setStyleSheet("font-weight: bold; font-size: 14px;")
+        grp_b_form.addRow("نقطه سر به سر:", self.lbl_break_even)
+
+        self.lbl_profit_status = QLabel("—")
+        self.lbl_profit_status.setWordWrap(True)
+        grp_b_form.addRow("وضعیت تیراژ فعلی:", self.lbl_profit_status)
+
+        main_vbox.addWidget(grp_b)
+
+        # ── Part C: Scenario table ───────────────────────────────────────
+        grp_c = QGroupBox("جدول سناریوها")
+        grp_c_vbox = QVBoxLayout(grp_c)
+
+        self.scenario_table = QTableWidget(4, 3)
+        self.scenario_table.setHorizontalHeaderLabels(["×۲.۵", "×۳.۰", "×۳.۵"])
+        self.scenario_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.scenario_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.scenario_table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+        grp_c_vbox.addWidget(self.scenario_table)
+
+        main_vbox.addWidget(grp_c)
+        main_vbox.addStretch()
+
+        scroll.setWidget(content)
+        pricing_outer = QVBoxLayout(self.tab_pricing)
+        pricing_outer.setContentsMargins(0, 0, 0, 0)
+        pricing_outer.addWidget(scroll)
+
+        # Wire live updates
+        self.pricing_multiplier_spin.valueChanged.connect(self._refresh_pricing_tab)
+        self.distribution_spin.valueChanged.connect(self._refresh_pricing_tab)
+
     def setup_report_tab(self):
             layout = QVBoxLayout()
             layout.addWidget(QLabel("لطفاً بخش‌هایی که می‌خواهید در گزارش PDF چاپ شوند را انتخاب کنید:"))
