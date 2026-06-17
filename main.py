@@ -1891,8 +1891,10 @@ class BookCostCalculator(QMainWindow):
         for row_idx, pct in enumerate(sales_pcts):
             for col_idx, mult in enumerate(fixed_multipliers):
                 sales_qty = max(1, int(tiraj * pct))
-                entry = next(r for r in rows_data
-                             if r['multiplier'] == mult and r['sales_qty'] == sales_qty)
+                entry = next((r for r in rows_data
+                              if r['multiplier'] == mult and r['sales_qty'] == sales_qty), None)
+                if entry is None:
+                    continue
                 profit = entry['net_profit']
                 item = QTableWidgetItem(f"{profit:+,.0f} تومان")
                 item.setTextAlignment(Qt.AlignCenter)
@@ -2726,7 +2728,10 @@ class BookCostCalculator(QMainWindow):
 
         self.def_cost_field_combo = QComboBox()
         # all cost field keys
-        self.def_cost_field_combo.addItems(list(self.cost_inputs.keys()))
+        _readonly_auto = {"هزینه زینک", "هزینه کاغذ متن", "هزینه کاغذ جلد"}
+        self.def_cost_field_combo.addItems(
+            [k for k in self.cost_inputs.keys() if k not in _readonly_auto]
+        )
         form.addRow("فیلد هزینه هدف:", self.def_cost_field_combo)
 
         self.def_cost_spin = QDoubleSpinBox()
