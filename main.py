@@ -1130,7 +1130,6 @@ class BookCostCalculator(QMainWindow):
             calc_layout.addRow("ضایعات کاغذ:", self.waste_percent_spin)
 
             self.calc_group.setLayout(calc_layout)
-            form_layout.addRow(self.calc_group)
 
             # --- Detailed Cost Inputs (5 GroupBoxes) ---
 
@@ -1142,6 +1141,9 @@ class BookCostCalculator(QMainWindow):
                 grp1_layout.addWidget(self._make_cost_row(fname))
             form_layout.addRow(grp1)
             self.cost_group_boxes["خلاقیت و تحریریه"] = grp1
+
+            # ── Group ②: پیش از چاپ (existing calc_group) ──────────────────
+            form_layout.addRow(self.calc_group)
 
             # ── Group ③: چاپ و مواد ───────────────────────────────────────
             grp3 = QGroupBox("③ چاپ و مواد")
