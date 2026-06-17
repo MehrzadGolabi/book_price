@@ -823,6 +823,28 @@ class BookCostCalculator(QMainWindow):
         self.cost_input_rows[field_name] = row
         return row
 
+    def _apply_preset(self, preset_name: str, zero_hidden: bool = True):
+        visible_fields = self.BOOK_TYPE_PRESETS.get(preset_name)  # None = show all
+        all_fields = [f for fields in self.COST_GROUPS.values() for f in fields]
+
+        for field_name in all_fields:
+            row = self.cost_input_rows.get(field_name)
+            if row is None:
+                continue
+            should_show = (visible_fields is None) or (field_name in visible_fields)
+            row.setVisible(should_show)
+            if not should_show and zero_hidden:
+                spin = self.cost_inputs.get(field_name)
+                if spin and not spin.isReadOnly():
+                    spin.setValue(0.0)
+
+        for group_name, group_box in self.cost_group_boxes.items():
+            group_fields = self.COST_GROUPS[group_name]
+            any_visible = (visible_fields is None) or any(
+                f in visible_fields for f in group_fields
+            )
+            group_box.setVisible(any_visible)
+
     def init_ui(self):
         # 1. Setup Menu Bar (Settings menu for advanced tabs)
         settings_menu = self.menuBar().addMenu("تنظیمات")
