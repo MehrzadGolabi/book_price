@@ -1820,6 +1820,86 @@ class BookCostCalculator(QMainWindow):
         self.pricing_multiplier_spin.valueChanged.connect(self._refresh_pricing_tab)
         self.distribution_spin.valueChanged.connect(self._refresh_pricing_tab)
 
+    def _refresh_pricing_tab(self):
+        try:
+            total_cost = float(self.lbl_final_total.text().replace(',', ''))
+            single_cost = float(self.lbl_single_price.text().replace(',', ''))
+            tiraj = self.inputs['تیراژ'].value()
+        except (ValueError, AttributeError):
+            return
+        if total_cost <= 0 or single_cost <= 0 or tiraj <= 0:
+            return
+
+        multiplier = self.pricing_multiplier_spin.value()
+        dist_pct = self.distribution_spin.value()
+        royalty_pct = self.royalty_input.value()
+
+        cover_price = compute_cover_price(single_cost, multiplier)
+        net_per_copy = compute_net_revenue_per_copy(cover_price, dist_pct, royalty_pct)
+        break_even = compute_break_even(total_cost, net_per_copy)
+        bd = compute_breakdown_pcts(cover_price, single_cost, dist_pct, royalty_pct)
+
+        # Part A — cover price label and breakdown bar
+        self.lbl_cover_price.setText(f"{cover_price:,.0f} تومان")
+        labels_fa = {"production": "تولید", "distribution": "توزیع",
+                     "royalty": "حق تالیف", "publisher": "سود ناشر"}
+        for key, frame in self._breakdown_frames.items():
+            pct = bd[f'{key}_pct']
+            amount = bd[key]
+            frame.setText(f"{labels_fa[key]}\n{pct:.1f}%")
+            frame.setToolTip(f"{amount:,.0f} تومان")
+            self.breakdown_layout.setStretchFactor(frame, max(1, int(pct)))
+
+        # Part B — break-even analysis
+        self.lbl_total_project_cost.setText(f"{total_cost:,.0f} تومان")
+        self.lbl_net_per_copy.setText(f"{net_per_copy:,.0f} تومان")
+        if break_even > 0:
+            self.lbl_break_even.setText(f"{break_even:,} جلد")
+            if tiraj >= break_even:
+                profit = net_per_copy * tiraj - total_cost
+                self.lbl_profit_status.setText(
+                    f"✓ تیراژ {tiraj:,} جلد از نقطه سر به سر ({break_even:,}) عبور کرده | "
+                    f"سود تخمینی فروش کامل: {profit:,.0f} تومان"
+                )
+                self.lbl_profit_status.setStyleSheet("color: #4caf50; font-weight: bold;")
+            else:
+                shortage = break_even - tiraj
+                self.lbl_profit_status.setText(
+                    f"✗ تیراژ {tiraj:,} جلد کمتر از نقطه سر به سر است | "
+                    f"برای رسیدن به سر به سر {shortage:,} جلد بیشتر نیاز است"
+                )
+                self.lbl_profit_status.setStyleSheet("color: #e57373; font-weight: bold;")
+        else:
+            self.lbl_break_even.setText("قابل محاسبه نیست")
+            self.lbl_profit_status.setText("درآمد خالص ناشر صفر یا منفی است")
+            self.lbl_profit_status.setStyleSheet("color: #e57373;")
+
+        # Part C — scenario table
+        fixed_multipliers = [2.5, 3.0, 3.5]
+        sales_pcts = [0.25, 0.5, 0.75, 1.0]
+        rows_data = compute_scenarios(total_cost, single_cost, tiraj,
+                                      dist_pct, royalty_pct, fixed_multipliers)
+        row_labels = [f"{max(1, int(tiraj * p)):,} جلد ({int(p * 100)}٪)" for p in sales_pcts]
+        self.scenario_table.setVerticalHeaderLabels(row_labels)
+
+        for row_idx, pct in enumerate(sales_pcts):
+            for col_idx, mult in enumerate(fixed_multipliers):
+                sales_qty = max(1, int(tiraj * pct))
+                entry = next(r for r in rows_data
+                             if r['multiplier'] == mult and r['sales_qty'] == sales_qty)
+                profit = entry['net_profit']
+                item = QTableWidgetItem(f"{profit:+,.0f} تومان")
+                item.setTextAlignment(Qt.AlignCenter)
+                if profit > 0:
+                    item.setForeground(QColor('#4caf50'))
+                elif profit < -0.10 * total_cost:
+                    item.setForeground(QColor('#e57373'))
+                else:
+                    item.setForeground(QColor('#ffb74d'))
+                if abs(mult - multiplier) < 0.01 and pct == 1.0:
+                    item.setBackground(QColor('#1a2a1a'))
+                self.scenario_table.setItem(row_idx, col_idx, item)
+
     def setup_report_tab(self):
             layout = QVBoxLayout()
             layout.addWidget(QLabel("لطفاً بخش‌هایی که می‌خواهید در گزارش PDF چاپ شوند را انتخاب کنید:"))
