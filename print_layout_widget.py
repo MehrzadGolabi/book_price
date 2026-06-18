@@ -4,28 +4,11 @@ from PySide6.QtWidgets import QWidget
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QPainter, QFont, QColor, QPen
 
+from calculator import CostCalculator
+
 
 class PrintLayoutWidget(QWidget):
-    ZINC_DIMS = {
-        "زینک GTO":      (35, 50),
-        "زینک 2 ورقی":   (50, 70),
-        "زینک 2.5 ورقی": (60, 90),
-        "زینک 3.5 ورقی": (70, 100),
-        "زینک 4.5 ورقی": (90, 120),
-    }
-    BOOK_PAGE_DIMS = {
-        "وزیری":     (17.0, 24.0),
-        "رقعی":      (14.5, 21.0),
-        "رحلی کوچک": (21.0, 28.5),
-        "رحلی بزرگ": (24.0, 34.0),
-        "جیبی":      (11.0, 18.0),
-        "خشتی":      (21.0, 21.0),
-        "مربع":      (21.0, 21.0),
-        "بزرگ‌قطع":  (24.0, 34.0),
-        "کوچک‌قطع":  (14.0, 20.0),
-        "سفارشی":    (None, None),
-    }
-
+    BOOK_PAGE_DIMS = CostCalculator.BOOK_PAGE_DIMS  # alias for main.py compat — Task 6 removes this
     TITLE_H = 26
 
     def __init__(self, parent=None):
@@ -153,7 +136,7 @@ class PrintLayoutWidget(QWidget):
 
         paper_w, paper_h = d['paper_w'], d['paper_h']
         book_w, book_h = d['book_w'], d['book_h']
-        zinc_w, zinc_h = self.ZINC_DIMS.get(d['zinc_matn'], (paper_w, paper_h))
+        zinc_w, zinc_h = CostCalculator.ZINC_DIMS.get(d['zinc_matn'], (paper_w, paper_h))
 
         max_real_h = max(paper_h, book_h, zinc_h)
         total_real_w = paper_w + book_w + zinc_w
