@@ -8,7 +8,6 @@ from calculator import CostCalculator
 
 
 class PrintLayoutWidget(QWidget):
-    BOOK_PAGE_DIMS = CostCalculator.BOOK_PAGE_DIMS  # alias for main.py compat — Task 6 removes this
     TITLE_H = 26
 
     def __init__(self, parent=None):
