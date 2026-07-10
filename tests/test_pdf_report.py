@@ -33,10 +33,16 @@ def _sample_data(**overrides):
     return data
 
 
-def test_full_report_generates(tmp_path):
+def _page_count(path) -> int:
+    raw = path.read_bytes()
+    return raw.count(b'/Type /Page') - raw.count(b'/Type /Pages')
+
+
+def test_full_report_generates_single_page(tmp_path):
     out = tmp_path / 'full.pdf'
     build_pdf_report(str(out), FONT, _sample_data())
     assert out.exists() and out.stat().st_size > 10_000
+    assert _page_count(out) == 1
 
 
 def test_sections_toggled_off(tmp_path):
@@ -55,13 +61,15 @@ def test_negative_net_revenue_pricing(tmp_path):
     assert out.exists()
 
 
-def test_long_costs_paginate(tmp_path):
-    # Enough rows to force multiple pages; footer/page-break path executes
-    groups = [(f'گروه {i}', [(f'هزینه شماره {j}', 1000.0 * (i + j)) for j in range(12)])
+def test_heavy_content_still_single_page(tmp_path):
+    # Every section ticked and far more cost rows than the real app can
+    # produce — the adaptive layout must still fit one A4 page
+    groups = [(f'گروه {i}', [(f'هزینه شماره {j}', 1000.0 * (i + j + 1)) for j in range(12)])
               for i in range(6)]
-    out = tmp_path / 'long.pdf'
+    out = tmp_path / 'heavy.pdf'
     build_pdf_report(str(out), FONT, _sample_data(cost_groups=groups))
     assert out.exists() and out.stat().st_size > 10_000
+    assert _page_count(out) == 1
 
 
 def test_zero_pricing_multiplier_skips_pricing(tmp_path):
