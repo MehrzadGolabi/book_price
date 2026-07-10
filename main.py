@@ -1782,7 +1782,9 @@ class BookCostCalculator(QMainWindow):
         layout.addWidget(zinc_group)
 
 
-        # Form to add / edit a mapping
+        # ── Mapping Form Group ─────────────────────────────────────────────
+        self.mapping_form_group = QGroupBox("افزودن قیمت پایه جدید")
+        form_outer = QVBoxLayout()
         form = QFormLayout()
 
         self.def_cat_combo = QComboBox()
@@ -1791,17 +1793,20 @@ class BookCostCalculator(QMainWindow):
             "نوع کاغذ متن", "نوع چاپ متن", "نوع رنگ متن", "نوع زینک متن",
             "نوع کاغذ جلد", "نوع چاپ جلد", "نوع رنگ جلد", "نوع زینک جلد"
         ])
+        self.def_cat_combo.currentIndexChanged.connect(
+            lambda: self.populate_default_value_combo(self.def_cat_combo.currentText())
+        )
         form.addRow("دسته‌بندی:", self.def_cat_combo)
 
         self.def_value_combo = QComboBox()
-        self.def_value_combo.setEditable(True)   # allow entering new values
+        self.def_value_combo.setEditable(True)
         self.def_value_combo.setInsertPolicy(QComboBox.InsertAtBottom)
-        # Populate with existing items when category changes
-        self.def_value_combo.currentTextChanged.connect(lambda text, cat=self.def_cat_combo.currentText(): self.apply_default_cost(cat, text))
+        self.def_value_combo.currentTextChanged.connect(
+            lambda text: self.apply_default_cost(self.def_cat_combo.currentText(), text)
+        )
         form.addRow("مقدار (نوع):", self.def_value_combo)
 
         self.def_cost_field_combo = QComboBox()
-        # all cost field keys
         _readonly_auto = {"هزینه زینک", "هزینه کاغذ متن", "هزینه کاغذ جلد"}
         self.def_cost_field_combo.addItems(
             [k for k in self.cost_inputs.keys() if k not in _readonly_auto]
@@ -1815,28 +1820,68 @@ class BookCostCalculator(QMainWindow):
         self.def_cost_spin.lineEdit().setAlignment(Qt.AlignCenter)
         form.addRow("قیمت پیش‌فرض:", self.def_cost_spin)
 
+        form_outer.addLayout(form)
+
         btn_layout = QHBoxLayout()
-        add_btn = QPushButton("افزودن")
-        add_btn.clicked.connect(self.add_default_cost_mapping)
-        edit_btn = QPushButton("ویرایش")
-        edit_btn.clicked.connect(self.edit_default_cost_mapping)
+        self._default_add_btn = QPushButton("افزودن")
+        self._default_add_btn.setStyleSheet(
+            "QPushButton { background-color: #27ae60; color: white; padding: 6px 16px; border-radius: 4px; }"
+            "QPushButton:hover { background-color: #219a52; }"
+        )
+        self._default_add_btn.clicked.connect(self.add_default_cost_mapping)
+
+        self._default_save_btn = QPushButton("ذخیره ویرایش")
+        self._default_save_btn.setStyleSheet(
+            "QPushButton { background-color: #2a6496; color: white; padding: 6px 16px; border-radius: 4px; }"
+            "QPushButton:hover { background-color: #1f4f78; }"
+        )
+        self._default_save_btn.clicked.connect(self.edit_default_cost_mapping)
+        self._default_save_btn.setVisible(False)
+
+        self._default_cancel_btn = QPushButton("انصراف")
+        self._default_cancel_btn.setStyleSheet(
+            "QPushButton { background-color: #6c757d; color: white; padding: 6px 16px; border-radius: 4px; }"
+            "QPushButton:hover { background-color: #565e64; }"
+        )
+        self._default_cancel_btn.clicked.connect(self._reset_default_form)
+        self._default_cancel_btn.setVisible(False)
+
         delete_btn = QPushButton("حذف")
+        delete_btn.setStyleSheet(
+            "QPushButton { background-color: #c0392b; color: white; padding: 6px 16px; border-radius: 4px; }"
+            "QPushButton:hover { background-color: #a93226; }"
+        )
         delete_btn.clicked.connect(self.delete_default_cost_mapping)
-        btn_layout.addWidget(add_btn)
-        btn_layout.addWidget(edit_btn)
+
+        btn_layout.addWidget(self._default_add_btn)
+        btn_layout.addWidget(self._default_save_btn)
+        btn_layout.addWidget(self._default_cancel_btn)
+        btn_layout.addStretch()
         btn_layout.addWidget(delete_btn)
 
-        layout.addLayout(form)
-        layout.addLayout(btn_layout)
+        form_outer.addLayout(btn_layout)
+        self.mapping_form_group.setLayout(form_outer)
+        layout.addWidget(self.mapping_form_group)
 
-        # Table showing all mappings
+        # ── Saved Mappings Table Group ─────────────────────────────────────
+        table_group = QGroupBox("ردیف‌های ذخیره‌شده")
+        table_layout = QVBoxLayout()
+
         self.defaults_table = QTableWidget(0, 4)
         self.defaults_table.setHorizontalHeaderLabels(["دسته‌بندی", "مقدار", "فیلد هزینه", "قیمت پیش‌فرض"])
         self.defaults_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.defaults_table.setSelectionBehavior(QTableWidget.SelectRows)
         self.defaults_table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.defaults_table.doubleClicked.connect(self.load_selected_default_for_edit)
-        layout.addWidget(self.defaults_table)
+        table_layout.addWidget(self.defaults_table)
+
+        hint_label = QLabel("برای ویرایش، روی ردیف دابل‌کلیک کنید")
+        hint_label.setAlignment(Qt.AlignCenter)
+        hint_label.setStyleSheet("color: #64748b; font-size: 11px;")
+        table_layout.addWidget(hint_label)
+
+        table_group.setLayout(table_layout)
+        layout.addWidget(table_group)
 
         self.tab_defaults.setLayout(layout)
 
@@ -1873,6 +1918,14 @@ class BookCostCalculator(QMainWindow):
         except Exception as err:
             QMessageBox.warning(self, "خطا", f"بارگذاری قیمت‌های پایه با خطا مواجه شد:\n{err}")
 
+    def _reset_default_form(self):
+        self.def_cost_spin.setValue(0)
+        self.editing_default_id = None
+        self.mapping_form_group.setTitle("افزودن قیمت پایه جدید")
+        self._default_add_btn.setVisible(True)
+        self._default_save_btn.setVisible(False)
+        self._default_cancel_btn.setVisible(False)
+
     def add_default_cost_mapping(self):
         """Inserts a new mapping into the database."""
         cat = self.def_cat_combo.currentText()
@@ -1887,6 +1940,7 @@ class BookCostCalculator(QMainWindow):
             self.db.save_category(cat, val)
             self.load_default_costs_table()
             self.populate_default_value_combo(cat)
+            self._reset_default_form()
         except Exception as err:
             QMessageBox.critical(self, "خطا", f"افزودن قیمت پایه با خطا مواجه شد:\n{err}")
 
@@ -1910,8 +1964,11 @@ class BookCostCalculator(QMainWindow):
         self.def_value_combo.setCurrentText(val)
         self.def_cost_field_combo.setCurrentText(field)
         self.def_cost_spin.setValue(cost)
-        # Store the editing id temporary
         self.editing_default_id = mapping_id
+        self.mapping_form_group.setTitle("ویرایش قیمت پایه")
+        self._default_add_btn.setVisible(False)
+        self._default_save_btn.setVisible(True)
+        self._default_cancel_btn.setVisible(True)
 
     def edit_default_cost_mapping(self):
         """Updates the mapping currently loaded in the form."""
@@ -1926,7 +1983,7 @@ class BookCostCalculator(QMainWindow):
             self.db.update_default_mapping(self.editing_default_id, cat, val, cost_field, cost)
             self.load_default_costs_table()
             self.populate_default_value_combo(cat)
-            self.editing_default_id = None
+            self._reset_default_form()
         except Exception as err:
             QMessageBox.critical(self, "خطا", f"ویرایش با خطا مواجه شد:\n{err}")
 
