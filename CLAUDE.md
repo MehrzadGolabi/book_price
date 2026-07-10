@@ -22,7 +22,7 @@ A Persian-language (Farsi, RTL) PySide6 desktop app for estimating and managing 
 .venv\Scripts\python.exe -m pytest tests/test_calculator.py::test_auto_costs_zinc -q
 ```
 
-Packaging: PyInstaller builds `BookCostCalculator.exe`, then `book_setup.iss` (Inno Setup) makes the installer. `bookcost/resources.py` locates resource files: frozen mode checks the PyInstaller bundle (`sys._MEIPASS`) then the exe directory; dev mode uses `resources/`. `config.ini` is read from next to the exe (frozen) or the repo root (dev).
+Packaging: `python -m PyInstaller BookCostCalculator.spec` builds a one-file exe with `resources/` bundled in, then `book_setup.iss` (Inno Setup, repo-relative paths) makes the installer. `bookcost/resources.py` locates resource files: frozen mode checks the PyInstaller bundle (`sys._MEIPASS`) then the exe directory; dev mode uses `resources/`. `config.ini` is read from next to the exe (frozen) or the repo root (dev).
 
 ## Architecture
 
