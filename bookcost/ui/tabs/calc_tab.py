@@ -2,13 +2,20 @@
 
 import matplotlib
 matplotlib.use('QtAgg')
-matplotlib.rcParams['font.family'] = ['Tahoma', 'Arial', 'DejaVu Sans']
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
+from matplotlib.font_manager import FontProperties
 
 from PySide6.QtWidgets import QFormLayout, QLabel, QVBoxLayout, QWidget
 
-from bookcost.reporting.farsi import shape
+from bookcost.resources import resource_path
+
+# matplotlib >= 3.11 applies bidi reordering and Arabic joining itself, so
+# chart text must be RAW Persian — running it through arabic_reshaper/bidi
+# (reporting.farsi.shape, which reportlab DOES need) double-processes it into
+# reversed, disconnected glyphs. The bundled Tahoma is passed by file path so
+# rendering never depends on system font resolution.
+_FARSI_FONT = FontProperties(fname=resource_path('tahoma.ttf'))
 
 
 class CalcTab(QWidget):
@@ -54,15 +61,17 @@ class CalcTab(QWidget):
         self.figure.clear()
         ax = self.figure.add_subplot(111)
 
-        labels = [shape(name) for name, val in cost_values.items() if val > 0]
+        labels = [name for name, val in cost_values.items() if val > 0]
         sizes = [val for val in cost_values.values() if val > 0]
 
         if not sizes:
-            ax.text(0.5, 0.5, "هیچ هزینه‌ای وارد نشده است", ha='center', va='center')
+            ax.text(0.5, 0.5, "هیچ هزینه‌ای وارد نشده است", ha='center', va='center',
+                    fontproperties=_FARSI_FONT)
             self.canvas.draw()
             return
 
-        ax.pie(sizes, labels=labels, autopct='%1.1f%%', startangle=140)
+        ax.pie(sizes, labels=labels, autopct='%1.1f%%', startangle=140,
+               textprops={'fontproperties': _FARSI_FONT})
         ax.axis('equal')
         self.figure.tight_layout()
         self.canvas.draw()

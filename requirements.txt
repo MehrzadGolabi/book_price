@@ -1,5 +1,5 @@
 PySide6
-matplotlib
+matplotlib>=3.11  # chart passes raw Farsi; 3.11+ does bidi + Arabic joining itself
 jdatetime
 reportlab
 arabic-reshaper

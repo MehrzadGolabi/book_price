@@ -50,6 +50,7 @@ Cost values are keyed by Persian display names (e.g. `هزینه کاغذ متن
 
 ## Conventions
 
+- Farsi text shaping is renderer-specific: matplotlib ≥ 3.11 applies bidi + Arabic joining itself, so chart text must be **raw** Persian (pre-shaping it double-processes into reversed, disconnected glyphs); reportlab does **no** shaping, so PDF text must go through `reporting.farsi.shape()`. Both use the bundled `resources/tahoma.ttf` by file path, never system font discovery.
 - `style.qss` holds the dark theme; QLabels need explicit high-contrast colors or they vanish against the dark background.
 - Bulk table/combo population: wrap in `setUpdatesEnabled(False)`/`(True)`, pre-set `setRowCount()`, use `addItems(list)` — not per-row inserts.
 - Avoid N+1 DB queries from UI loops; batch instead (see `BookDatabase.get_default_costs_batch`).
