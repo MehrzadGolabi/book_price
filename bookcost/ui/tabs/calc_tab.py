@@ -40,12 +40,6 @@ class CalcTab(QWidget):
     def cost_per_book(self) -> float:
         return self._cost_per_book
 
-    def total_cost_text(self) -> str:
-        return self.lbl_final_total.text()
-
-    def single_cost_text(self) -> str:
-        return self.lbl_single_price.text()
-
     def set_totals(self, total_cost: float, cost_per_book: float):
         self._total_cost = total_cost
         self._cost_per_book = cost_per_book

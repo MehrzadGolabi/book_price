@@ -324,18 +324,29 @@ class BookCostCalculator(QMainWindow):
         if not file_path:
             return
 
+        cost_values = self.details_tab.cost_values()
+        cost_groups = [
+            (group, [(f, cost_values[f]) for f in fields])
+            for group, fields in CostCalculator.COST_GROUPS.items()
+        ]
+
         data = ReportData(
             title=self.details_tab.title(),
             basic_info=self.details_tab.report_basic_info(),
             tiraj=self.details_tab.tiraj(),
+            print_specs=self.details_tab.report_print_specs(),
             features=self.details_tab.report_features(),
-            costs=list(self.details_tab.cost_values().items()),
+            cost_groups=cost_groups,
             royalty_pct=self.details_tab.royalty_pct(),
-            total_cost_text=self.calc_tab.total_cost_text(),
-            single_cost_text=self.calc_tab.single_cost_text(),
+            total_cost=self.calc_tab.total_cost,
+            single_cost=self.calc_tab.cost_per_book,
+            pricing_multiplier=self.pricing_tab.multiplier(),
+            distribution_pct=self.pricing_tab.distribution_pct(),
             include_basic_info=self.report_tab.include_basic_info(),
+            include_specs=self.report_tab.include_specs(),
             include_features=self.report_tab.include_features(),
             include_costs=self.report_tab.include_costs(),
+            include_pricing=self.report_tab.include_pricing(),
             logo_path=resource_path("logo.png"),
         )
 

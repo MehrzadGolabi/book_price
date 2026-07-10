@@ -529,6 +529,31 @@ class DetailsTab(QWidget):
     def report_features(self) -> list:
         return [(key, self.inputs[key].currentText()) for key in DYNAMIC_TYPE_CATEGORIES]
 
+    def report_print_specs(self) -> list:
+        """[(label, value)] snapshot of the pre-press setup for the PDF report."""
+        yes_no = lambda checked: "بله" if checked else "خیر"
+        specs = [
+            ("تعداد صفحات کتاب", f"{self.total_pages_spin.value():,}"),
+            ("اندازه کاغذ چاپ", self.paper_size_combo.currentText()),
+            ("تعداد فرم متن", f"{self.form_matn_spin.value():,}"),
+            ("چاپ دورو متن", yes_no(self.double_sided_matn_chk.isChecked())),
+            ("تعداد رنگ متن", self.color_matn_combo.currentText()),
+            ("ابعاد زینک متن", self.zinc_size_matn_combo.currentText()),
+            ("تعداد فرم جلد", f"{self.form_jeld_spin.value():,}"),
+            ("چاپ دورو جلد", yes_no(self.double_sided_jeld_chk.isChecked())),
+            ("تعداد رنگ جلد", self.color_jeld_combo.currentText()),
+            ("ابعاد زینک جلد", self.zinc_size_jeld_combo.currentText()),
+            ("ضایعات کاغذ", f"{self.waste_percent_spin.value():g} ٪"),
+            ("قیمت واحد کاغذ متن", f"{self.unit_price_paper_matn_spin.value():,.0f} تومان"),
+            ("قیمت واحد کاغذ جلد", f"{self.unit_price_paper_jeld_spin.value():,.0f} تومان"),
+        ]
+        if self.book_dims_row_widget.isVisible():
+            specs.insert(1, ("ابعاد کتاب",
+                             f"{self.book_width_spin.value():g}×{self.book_height_spin.value():g} cm"))
+        if self.orientation_label.text():
+            specs.insert(2, ("جهت بهینه", self.orientation_label.text()))
+        return specs
+
     # ── Persistence mapping ────────────────────────────────────────────────
 
     def collect_project(self) -> dict:
