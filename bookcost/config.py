@@ -1,21 +1,17 @@
-import sys
 import os
 import configparser
 
+from bookcost.resources import app_dir
+
 
 def get_db_config():
-    """Reads database and security config from config.ini."""
+    """Reads database and security config from config.ini next to the app."""
     default_config = {
         'filename': 'book_publishing.db',
         'delete_password': 'admin'
     }
 
-    if getattr(sys, 'frozen', False):
-        app_dir = os.path.dirname(sys.executable)
-    else:
-        app_dir = os.path.dirname(os.path.abspath(__file__))
-
-    config_path = os.path.join(app_dir, 'config.ini')
+    config_path = os.path.join(app_dir(), 'config.ini')
 
     config = configparser.ConfigParser()
     if os.path.exists(config_path):

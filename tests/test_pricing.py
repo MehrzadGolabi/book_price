@@ -2,7 +2,7 @@ import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import math
 
-from pricing import (
+from bookcost.core.pricing import (
     compute_cover_price,
     compute_net_revenue_per_copy,
     compute_break_even,

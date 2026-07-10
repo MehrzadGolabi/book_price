@@ -2,7 +2,7 @@ import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import pytest
 import sqlite3
-from db import BookDatabase
+from bookcost.core.db import BookDatabase
 
 
 @pytest.fixture

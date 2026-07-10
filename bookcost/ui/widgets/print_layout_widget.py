@@ -4,7 +4,7 @@ from PySide6.QtWidgets import QWidget
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QPainter, QFont, QColor, QPen
 
-from calculator import CostCalculator
+from bookcost.core.calculator import CostCalculator
 
 
 class PrintLayoutWidget(QWidget):

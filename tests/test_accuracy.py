@@ -11,8 +11,8 @@ import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import math
 import pytest
-from calculator import CostCalculator
-from db import BookDatabase
+from bookcost.core.calculator import CostCalculator
+from bookcost.core.db import BookDatabase
 
 
 @pytest.fixture

@@ -1,4 +1,4 @@
-from db import BookDatabase
+from bookcost.core.db import BookDatabase
 from PySide6.QtWidgets import (
     QDialog, QGroupBox, QVBoxLayout, QHBoxLayout, QFormLayout,
     QTableWidget, QHeaderView, QTableWidgetItem,
