@@ -1,4 +1,6 @@
+import os
 import sqlite3
+import urllib.parse
 
 
 SCHEMA_SQL = """
@@ -149,8 +151,12 @@ REQUIRED_TABLES = {
 
 def is_valid_database_file(path: str) -> bool:
     """True if `path` is an SQLite database containing all required tables."""
+    if not os.path.isfile(path):
+        return False
+    # Percent-encode: a raw '#' or '%' in the path breaks SQLite URI parsing
+    uri = 'file:' + urllib.parse.quote(os.path.abspath(path).replace('\\', '/'))
     try:
-        conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+        conn = sqlite3.connect(f"{uri}?mode=ro", uri=True)
         try:
             names = {row[0] for row in conn.execute(
                 "SELECT name FROM sqlite_master WHERE type='table'")}

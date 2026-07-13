@@ -110,3 +110,14 @@ def test_backup_and_validate(tmp_path):
     restored = BookDatabase(str(backup))
     restored.connect()
     assert restored.get_project(pid)['title'] == 'کتاب نمونه'
+
+
+def test_validate_handles_tricky_paths(tmp_path):
+    """Persian names, spaces, '#' and '%' in the path must not break validation."""
+    src = BookDatabase(str(tmp_path / 'live.db'))
+    src.connect()
+    tricky_dir = tmp_path / 'پشتیبان #1 % تست'
+    tricky_dir.mkdir()
+    dest = tricky_dir / 'پشتیبان شهرقلم #2.db'
+    src.backup_to(str(dest))
+    assert is_valid_database_file(str(dest))

@@ -9,7 +9,7 @@ import os
 import sys
 
 import jdatetime
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QStandardPaths, Qt
 from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import (
     QFileDialog, QInputDialog, QLabel, QLineEdit, QMainWindow, QMessageBox,
@@ -379,17 +379,22 @@ class BookCostCalculator(QMainWindow):
 
     def backup_database(self):
         stamp = jdatetime.datetime.now().strftime("%Y-%m-%d_%H-%M")
+        docs = QStandardPaths.writableLocation(QStandardPaths.DocumentsLocation)
+        default_path = os.path.join(docs, f"پشتیبان_شهرقلم_{stamp}.db")
         file_path, _ = QFileDialog.getSaveFileName(
-            self, "پشتیبان‌گیری از دیتابیس", f"پشتیبان_شهرقلم_{stamp}.db",
-            "SQLite Database (*.db)")
+            self, "پشتیبان‌گیری از دیتابیس", default_path, "SQLite Database (*.db)")
         if not file_path:
             return
         try:
             self.db.backup_to(file_path)
+            if not is_valid_database_file(file_path):
+                raise RuntimeError("فایل پشتیبان پس از نوشتن قابل خواندن نیست")
         except Exception as err:
             QMessageBox.critical(self, "خطا", f"پشتیبان‌گیری با خطا مواجه شد:\n{err}")
             return
-        QMessageBox.information(self, "موفقیت", "پشتیبان‌گیری از دیتابیس انجام شد.")
+        QMessageBox.information(
+            self, "موفقیت",
+            f"پشتیبان‌گیری از دیتابیس انجام شد:\n{os.path.normpath(file_path)}")
 
     def restore_database(self):
         file_path, _ = QFileDialog.getOpenFileName(
