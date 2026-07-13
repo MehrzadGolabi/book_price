@@ -479,6 +479,21 @@ class DetailsTab(QWidget):
             )
             group_box.setVisible(any_visible)
 
+    def reload_categories(self):
+        """Re-reads the dynamic type combos from the database (e.g. after a
+        restore or an import added new type values)."""
+        for dtype in DYNAMIC_TYPE_CATEGORIES:
+            combo = self.inputs[dtype]
+            current = combo.currentText()
+            combo.blockSignals(True)
+            combo.clear()
+            try:
+                combo.addItems(self.db.get_categories(dtype))
+            except Exception as e:
+                print("Error reloading categories:", e)
+            combo.setCurrentText(current)
+            combo.blockSignals(False)
+
     def save_new_dynamic_types(self):
         """Persists any type combo text that isn't in its list yet."""
         for category, widget in self.inputs.items():

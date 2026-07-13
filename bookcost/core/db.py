@@ -113,6 +113,53 @@ _ZINC_SIZES = [
     "زینک 4.5 ورقی", "زینک GTO",
 ]
 
+# Columns of the projects table that carry data (everything except id)
+PROJECT_COLUMNS = [
+    'title', 'subtitle', 'creation_date', 'qate', 'tiraj',
+    'royalty_percent', 'total_cost', 'single_book_cost',
+]
+
+# Columns of project_details written by _insert_details (everything except project_id)
+DETAIL_COLUMNS = [
+    'noeh_kaghaz_matn', 'noeh_chap_matn', 'noeh_rang_matn', 'noeh_zink_matn',
+    'noeh_kaghaz_jeld', 'noeh_chap_jeld', 'noeh_rang_jeld', 'noeh_zink_jeld',
+    'form_matn', 'is_double_sided_matn', 'color_count_matn', 'zinc_size_matn',
+    'form_jeld', 'is_double_sided_jeld', 'color_count_jeld', 'zinc_size_jeld',
+    'unit_price_paper_matn', 'unit_price_paper_jeld', 'unit_price_zinc', 'waste_percent',
+    'book_width', 'book_height', 'paper_size', 'orientation', 'pages_per_sheet',
+    'total_pages',
+    'hazineh_talif', 'hazineh_tarjomeh', 'hazineh_tasvir', 'hazineh_virayesh',
+    'hazineh_tarahi_jeld', 'hazineh_modiriat_atelieh', 'hazineh_zink',
+    'hazineh_chap_matn', 'hazineh_chap_jeld', 'hazineh_kaghaz_matn',
+    'hazineh_kaghaz_jeld', 'hazineh_rokesh_salfon', 'hazineh_moghava_maghzi',
+    'hazineh_ghaleb_letterpress', 'hazineh_ghaleb_diecut', 'hazineh_khat_ta',
+    'hazineh_malzomat', 'hazineh_jeldsazi', 'hazineh_sahafi',
+    'hazineh_boresh_bastebandi', 'hazineh_haml_naghl', 'hazineh_montaj',
+    'hazineh_horoofchini', 'hazineh_mojawwez_ershad', 'hazineh_shabok',
+    'hazineh_talakoobi', 'hazineh_uv_mowzei', 'hazineh_barjasteh',
+    'book_type_preset', 'pricing_multiplier', 'distribution_percent',
+]
+
+# Tables a valid database (or backup) must contain
+REQUIRED_TABLES = {
+    'projects', 'project_details', 'categories', 'paper_calculations',
+    'default_cost_mappings', 'zinc_prices',
+}
+
+
+def is_valid_database_file(path: str) -> bool:
+    """True if `path` is an SQLite database containing all required tables."""
+    try:
+        conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+        try:
+            names = {row[0] for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'")}
+        finally:
+            conn.close()
+        return REQUIRED_TABLES <= names
+    except sqlite3.Error:
+        return False
+
 
 class BookDatabase:
     def __init__(self, path: str):
@@ -140,6 +187,19 @@ class BookDatabase:
                 self._conn.commit()
             except sqlite3.OperationalError:
                 pass  # column already exists
+
+    def close(self):
+        if self._conn is not None:
+            self._conn.close()
+            self._conn = None
+
+    def backup_to(self, dest_path: str):
+        """Writes a consistent copy of the live database to `dest_path`."""
+        dest = sqlite3.connect(dest_path)
+        try:
+            self._conn.backup(dest)
+        finally:
+            dest.close()
 
     # ── Projects ──────────────────────────────────────────────────────────
 
@@ -195,29 +255,10 @@ class BookDatabase:
         self._conn.commit()
 
     def _insert_details(self, cur, project_id: int, d: dict):
-        """Insert a project_details row. d keys match column names."""
-        cols = [
-            'noeh_kaghaz_matn', 'noeh_chap_matn', 'noeh_rang_matn', 'noeh_zink_matn',
-            'noeh_kaghaz_jeld', 'noeh_chap_jeld', 'noeh_rang_jeld', 'noeh_zink_jeld',
-            'form_matn', 'is_double_sided_matn', 'color_count_matn', 'zinc_size_matn',
-            'form_jeld', 'is_double_sided_jeld', 'color_count_jeld', 'zinc_size_jeld',
-            'unit_price_paper_matn', 'unit_price_paper_jeld', 'unit_price_zinc', 'waste_percent',
-            'book_width', 'book_height', 'paper_size', 'orientation', 'pages_per_sheet',
-            'total_pages',
-            'hazineh_talif', 'hazineh_tarjomeh', 'hazineh_tasvir', 'hazineh_virayesh',
-            'hazineh_tarahi_jeld', 'hazineh_modiriat_atelieh', 'hazineh_zink',
-            'hazineh_chap_matn', 'hazineh_chap_jeld', 'hazineh_kaghaz_matn',
-            'hazineh_kaghaz_jeld', 'hazineh_rokesh_salfon', 'hazineh_moghava_maghzi',
-            'hazineh_ghaleb_letterpress', 'hazineh_ghaleb_diecut', 'hazineh_khat_ta',
-            'hazineh_malzomat', 'hazineh_jeldsazi', 'hazineh_sahafi',
-            'hazineh_boresh_bastebandi', 'hazineh_haml_naghl', 'hazineh_montaj',
-            'hazineh_horoofchini', 'hazineh_mojawwez_ershad', 'hazineh_shabok',
-            'hazineh_talakoobi', 'hazineh_uv_mowzei', 'hazineh_barjasteh',
-            'book_type_preset', 'pricing_multiplier', 'distribution_percent',
-        ]
-        placeholders = ', '.join(['?'] * (len(cols) + 1))
-        col_list = 'project_id, ' + ', '.join(cols)
-        values = [project_id] + [d.get(c) for c in cols]
+        """Insert a project_details row. d keys match DETAIL_COLUMNS names."""
+        placeholders = ', '.join(['?'] * (len(DETAIL_COLUMNS) + 1))
+        col_list = 'project_id, ' + ', '.join(DETAIL_COLUMNS)
+        values = [project_id] + [d.get(c) for c in DETAIL_COLUMNS]
         cur.execute(
             f"INSERT INTO project_details ({col_list}) VALUES ({placeholders})",
             values

@@ -16,9 +16,13 @@ from PySide6.QtWidgets import (
     QTabWidget, QToolBar,
 )
 
+import re
+import shutil
+
 from bookcost.config import DB_CONFIG
 from bookcost.core.calculator import CostCalculator
-from bookcost.core.db import BookDatabase
+from bookcost.core.db import BookDatabase, is_valid_database_file
+from bookcost.core.project_io import load_project_file, save_project_file
 from bookcost.reporting.pdf_report import ReportData, build_pdf_report
 from bookcost.resources import resource_path
 from bookcost.ui.tabs.calc_tab import CalcTab
@@ -80,6 +84,21 @@ class BookCostCalculator(QMainWindow):
         self.tabs.addTab(self.defaults_tab,   "مدیریت قیمت‌های پایه")
 
     def _build_chrome(self):
+        file_menu = self.menuBar().addMenu("فایل")
+        export_project_action = QAction("خروجی گرفتن از پروژه (JSON)...", self)
+        export_project_action.triggered.connect(self.export_project_to_file)
+        file_menu.addAction(export_project_action)
+        import_project_action = QAction("وارد کردن پروژه (JSON)...", self)
+        import_project_action.triggered.connect(self.import_project_from_file)
+        file_menu.addAction(import_project_action)
+        file_menu.addSeparator()
+        backup_db_action = QAction("پشتیبان‌گیری از کل دیتابیس...", self)
+        backup_db_action.triggered.connect(self.backup_database)
+        file_menu.addAction(backup_db_action)
+        restore_db_action = QAction("بازیابی دیتابیس از فایل پشتیبان...", self)
+        restore_db_action.triggered.connect(self.restore_database)
+        file_menu.addAction(restore_db_action)
+
         settings_menu = self.menuBar().addMenu("تنظیمات")
         paper_calc_menu_action = QAction("محاسبات پیش‌پردازش کاغذ", self)
         paper_calc_menu_action.triggered.connect(
@@ -311,6 +330,117 @@ class BookCostCalculator(QMainWindow):
             QMessageBox.information(self, "موفقیت", f"{updated_count} قیمت پایه‌ای بارگذاری شد.")
         else:
             QMessageBox.information(self, "اطلاعات", "هیچ تطابقی یافت نشد.")
+
+    # ── Project & database import/export ──────────────────────────────────
+
+    def _project_id_for_export(self):
+        """Selected row in the projects tab, else the currently open project."""
+        selected = self.projects_tab.selected_project()
+        if selected is not None:
+            return selected[0]
+        return self.current_project_id
+
+    def export_project_to_file(self):
+        project_id = self._project_id_for_export()
+        if project_id is None:
+            QMessageBox.warning(
+                self, "هشدار",
+                "ابتدا یک پروژه را از جدول انتخاب کنید یا پروژه‌ای را باز کنید.")
+            return
+        project = self.db.get_project(project_id)
+        safe_title = re.sub(r'[\\/:*?"<>|]+', '_', project['title']).strip() or 'project'
+        file_path, _ = QFileDialog.getSaveFileName(
+            self, "خروجی گرفتن از پروژه", f"{safe_title}.json", "JSON Files (*.json)")
+        if not file_path:
+            return
+        try:
+            save_project_file(self.db, project_id, file_path)
+        except Exception as err:
+            QMessageBox.critical(self, "خطا", f"خروجی گرفتن با خطا مواجه شد:\n{err}")
+            return
+        QMessageBox.information(self, "موفقیت", f"پروژه «{project['title']}» ذخیره شد.")
+
+    def import_project_from_file(self):
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "وارد کردن پروژه", "", "JSON Files (*.json)")
+        if not file_path:
+            return
+        try:
+            new_id = load_project_file(self.db, file_path)
+        except ValueError as err:
+            QMessageBox.critical(self, "خطا", str(err))
+            return
+        except Exception as err:
+            QMessageBox.critical(self, "خطا", f"وارد کردن پروژه با خطا مواجه شد:\n{err}")
+            return
+        self.projects_tab.refresh()
+        self.details_tab.reload_categories()
+        self.load_project_by_id(new_id)
+
+    def backup_database(self):
+        stamp = jdatetime.datetime.now().strftime("%Y-%m-%d_%H-%M")
+        file_path, _ = QFileDialog.getSaveFileName(
+            self, "پشتیبان‌گیری از دیتابیس", f"پشتیبان_شهرقلم_{stamp}.db",
+            "SQLite Database (*.db)")
+        if not file_path:
+            return
+        try:
+            self.db.backup_to(file_path)
+        except Exception as err:
+            QMessageBox.critical(self, "خطا", f"پشتیبان‌گیری با خطا مواجه شد:\n{err}")
+            return
+        QMessageBox.information(self, "موفقیت", "پشتیبان‌گیری از دیتابیس انجام شد.")
+
+    def restore_database(self):
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "بازیابی دیتابیس", "", "SQLite Database (*.db)")
+        if not file_path:
+            return
+        if not is_valid_database_file(file_path):
+            QMessageBox.critical(
+                self, "خطا",
+                "این فایل یک پشتیبان معتبر دیتابیس این برنامه نیست.")
+            return
+
+        reply = QMessageBox.question(
+            self, "تأیید بازیابی",
+            "تمام اطلاعات فعلی با محتوای فایل پشتیبان جایگزین می‌شود.\n"
+            "از دیتابیس فعلی به‌صورت خودکار نسخه پشتیبان تهیه خواهد شد.\n\n"
+            "آیا ادامه می‌دهید؟",
+            QMessageBox.Yes | QMessageBox.No)
+        if reply != QMessageBox.Yes:
+            return
+
+        db_path = DB_CONFIG['filename']
+        stamp = jdatetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        auto_backup = f"{db_path}.pre-restore-{stamp}.bak"
+        try:
+            self.db.backup_to(auto_backup)
+            self.db.close()
+            shutil.copyfile(file_path, db_path)
+            self.db.connect()
+        except Exception as err:
+            # Try to come back up on the old database
+            try:
+                if self.db._conn is None:
+                    shutil.copyfile(auto_backup, db_path)
+                    self.db.connect()
+            except Exception:
+                pass
+            QMessageBox.critical(self, "خطا", f"بازیابی با خطا مواجه شد:\n{err}")
+            return
+
+        # Refresh everything that caches database content
+        self.new_project()
+        self.projects_tab.refresh()
+        self.details_tab.reload_categories()
+        self.details_tab.refresh_zinc_price_labels()
+        self.defaults_tab.reload()
+        self.defaults_tab.load_zinc_prices_table()
+        self.paper_calc_tab.load_paper_calculations()
+        QMessageBox.information(
+            self, "موفقیت",
+            f"دیتابیس بازیابی شد.\nنسخه قبلی در این مسیر نگه‌داری می‌شود:\n{auto_backup}")
 
     def generate_pdf(self):
         font_path = resource_path("tahoma.ttf")
