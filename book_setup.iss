@@ -21,7 +21,7 @@ DefaultDirName={autopf}\PriceEstimatorShghalam
 DefaultGroupName={#MyAppName}
 AllowNoIcons=yes
 PrivilegesRequiredOverridesAllowed=dialog
-OutputBaseFilename=mysetup
+OutputBaseFilename=BookCostCalculator-Setup-{#MyAppVersion}
 ; Optional installer icon — drop an .ico at the repo root and uncomment:
 ;SetupIconFile=shghalam.ico
 Compression=lzma
