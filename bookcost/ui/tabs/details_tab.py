@@ -304,7 +304,13 @@ class DetailsTab(QWidget):
         matn_price_layout.addWidget(btn_calc_matn)
         calc_layout.addRow("قیمت واحد هر ورق کاغذ متن:", matn_price_row)
 
-        self.papers_matn_list = PaperListWidget("نوع کاغذ متن (مثلاً تحریر ۸۰)")
+        self.papers_matn_list = PaperListWidget(
+            "نوع کاغذ متن (مثلاً تحریر ۸۰)",
+            items_provider=lambda: self._paper_combo_items('نوع کاغذ متن'),
+            price_lookup=self.db.get_latest_paper_price,
+            dims_lookup=self.db.get_paper_dims,
+            default_forms=self.form_matn_spin.value,
+        )
         calc_layout.addRow("چند نوع کاغذ متن:", self.papers_matn_list)
 
         # Cover (jeld) setup
@@ -340,7 +346,13 @@ class DetailsTab(QWidget):
         jeld_price_layout.addWidget(btn_calc_jeld)
         calc_layout.addRow("قیمت واحد هر ورق کاغذ جلد:", jeld_price_row)
 
-        self.papers_jeld_list = PaperListWidget("نوع کاغذ جلد (مثلاً گلاسه ۱۳۵)")
+        self.papers_jeld_list = PaperListWidget(
+            "نوع کاغذ جلد (مثلاً گلاسه ۱۳۵)",
+            items_provider=lambda: self._paper_combo_items('نوع کاغذ جلد'),
+            price_lookup=self.db.get_latest_paper_price,
+            dims_lookup=self.db.get_paper_dims,
+            default_forms=self.form_jeld_spin.value,
+        )
         calc_layout.addRow("چند نوع کاغذ جلد:", self.papers_jeld_list)
 
         self.waste_percent_spin = QDoubleSpinBox()
@@ -390,6 +402,23 @@ class DetailsTab(QWidget):
         self.book_height_spin.valueChanged.connect(self._refresh_layout_widget)
 
     # ── Live behaviors ─────────────────────────────────────────────────────
+
+    def _paper_combo_items(self, category: str) -> list:
+        """Type-category values plus saved paper-library names, deduplicated."""
+        items = []
+        try:
+            items.extend(self.db.get_categories(category))
+            for name in self.db.get_paper_type_names():
+                if name not in items:
+                    items.append(name)
+        except Exception as e:
+            print("Error loading paper combo items:", e)
+        return items
+
+    def autofill_paper_prices(self) -> int:
+        """Fills all multi-paper rows from the paper library; returns count."""
+        return (self.papers_matn_list.autofill_prices()
+                + self.papers_jeld_list.autofill_prices())
 
     def _on_series_toggled(self, checked: bool):
         self.series_widget.setVisible(checked)
@@ -601,6 +630,8 @@ class DetailsTab(QWidget):
                 print("Error reloading categories:", e)
             combo.setCurrentText(current)
             combo.blockSignals(False)
+        self.papers_matn_list.refresh_items()
+        self.papers_jeld_list.refresh_items()
 
     def save_new_dynamic_types(self):
         """Persists any type combo text that isn't in its list yet."""

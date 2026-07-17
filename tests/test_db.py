@@ -191,3 +191,32 @@ def test_save_category_duplicate_ignored(db):
     db.save_category('نوع کاغذ متن', 'تحریر')
     db.save_category('نوع کاغذ متن', 'تحریر')  # should not raise
     assert db.get_categories('نوع کاغذ متن').count('تحریر') == 1
+
+
+# ── Paper library lookups (multi-paper conveniences) ────────────────────────
+
+def _lib_entry(paper_type, price, h=0, l=0):
+    return {'paper_type': paper_type, 'formula_type': 'ابعاد، وزن و قیمت (هر واحد)',
+            'weight': 80, 'height': h, 'length': l, 'bundle_count': 0,
+            'bundle_weight': 0, 'price': 0, 'unit_price': price}
+
+
+def test_paper_library_lookups(db):
+    db.insert_paper_calculation(_lib_entry('تحریر ۸۰', 9000, 100, 70))
+    db.insert_paper_calculation(_lib_entry('گلاسه ۱۳۵', 15000, 60, 90))
+    db.insert_paper_calculation(_lib_entry('تحریر ۸۰', 9500, 70, 100))  # newer price
+
+    assert db.get_paper_type_names() == ['تحریر ۸۰', 'گلاسه ۱۳۵']
+    assert db.get_latest_paper_price('تحریر ۸۰') == 9500.0
+    assert db.get_latest_paper_price('ناموجود') is None
+    assert db.get_latest_paper_price('') is None
+    # dims normalized (bigger, smaller) regardless of input order
+    assert db.get_paper_dims('تحریر ۸۰') == (100.0, 70.0)
+    assert db.get_paper_dims('گلاسه ۱۳۵') == (90.0, 60.0)
+    assert db.get_paper_dims('ناموجود') is None
+
+
+def test_paper_dims_skips_manual_entries(db):
+    db.insert_paper_calculation(_lib_entry('دستی', 5000))  # no dims
+    assert db.get_latest_paper_price('دستی') == 5000.0
+    assert db.get_paper_dims('دستی') is None

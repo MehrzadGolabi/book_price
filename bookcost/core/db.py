@@ -387,6 +387,39 @@ class BookDatabase:
         cur.execute("SELECT * FROM paper_calculations ORDER BY id DESC")
         return cur.fetchall()
 
+    def get_paper_type_names(self) -> list:
+        """Distinct paper names saved in the paper-price library."""
+        cur = self._conn.cursor()
+        cur.execute("SELECT DISTINCT paper_type FROM paper_calculations ORDER BY paper_type")
+        return [row['paper_type'] for row in cur.fetchall()]
+
+    def get_latest_paper_price(self, paper_type: str):
+        """Most recent library unit price for a paper name, or None."""
+        if not paper_type:
+            return None
+        cur = self._conn.cursor()
+        cur.execute(
+            "SELECT unit_price FROM paper_calculations WHERE paper_type = ? "
+            "ORDER BY id DESC LIMIT 1", (paper_type,))
+        row = cur.fetchone()
+        return float(row['unit_price']) if row else None
+
+    def get_paper_dims(self, paper_type: str):
+        """Latest known sheet dimensions (bigger, smaller) for a paper name,
+        or None if the library has no sized entry for it."""
+        if not paper_type:
+            return None
+        cur = self._conn.cursor()
+        cur.execute(
+            "SELECT height, length FROM paper_calculations "
+            "WHERE paper_type = ? AND height > 0 AND length > 0 "
+            "ORDER BY id DESC LIMIT 1", (paper_type,))
+        row = cur.fetchone()
+        if not row:
+            return None
+        a, b = float(row['height']), float(row['length'])
+        return (max(a, b), min(a, b))
+
     def insert_paper_calculation(self, data: dict) -> int:
         cur = self._conn.cursor()
         cur.execute(

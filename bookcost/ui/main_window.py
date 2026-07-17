@@ -321,24 +321,29 @@ class BookCostCalculator(QMainWindow):
             QMessageBox.critical(self, "خطا", f"حذف پروژه با مشکل مواجه شد:\n{err}")
 
     def import_default_prices(self):
-        """Fills cost fields from default mappings matching the selected type values."""
-        items = self.details_tab.type_selections()
-        if not items:
-            QMessageBox.information(self, "اطلاعات", "هیچ تطابقی یافت نشد.")
-            return
+        """Fills cost fields from default mappings matching the selected type
+        values, and unit prices of all multi-paper rows from the paper library."""
+        updated_count = 0
         try:
-            mappings = self.db.get_default_costs_batch(items)
-            updated_count = 0
-            for mapping in mappings:
-                cost_field = mapping['target_cost_field']
-                if cost_field in self.details_tab.cost_inputs:
-                    self.details_tab.set_cost_value(cost_field, mapping['default_cost'])
-                    updated_count += 1
+            items = self.details_tab.type_selections()
+            if items:
+                mappings = self.db.get_default_costs_batch(items)
+                for mapping in mappings:
+                    cost_field = mapping['target_cost_field']
+                    if cost_field in self.details_tab.cost_inputs:
+                        self.details_tab.set_cost_value(cost_field, mapping['default_cost'])
+                        updated_count += 1
+            paper_count = self.details_tab.autofill_paper_prices()
         except Exception as err:
             print("Error importing defaults:", err)
             return
-        if updated_count > 0:
-            QMessageBox.information(self, "موفقیت", f"{updated_count} قیمت پایه‌ای بارگذاری شد.")
+        if updated_count or paper_count:
+            parts = []
+            if updated_count:
+                parts.append(f"{updated_count} قیمت پایه هزینه‌ها")
+            if paper_count:
+                parts.append(f"{paper_count} قیمت کاغذ از کتابخانه")
+            QMessageBox.information(self, "موفقیت", "بارگذاری شد: " + " و ".join(parts) + ".")
         else:
             QMessageBox.information(self, "اطلاعات", "هیچ تطابقی یافت نشد.")
 
