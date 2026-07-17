@@ -42,8 +42,15 @@ class PaperCalcTab(QWidget):
         form.addRow("نحوه محاسبه:", self.paper_formula_combo)
 
         self.paper_weight_spin = QDoubleSpinBox()
-        self.paper_weight_spin.setMaximum(999999)
-        form.addRow("وزن:", self.paper_weight_spin)
+        self.paper_weight_spin.setRange(0, 2000)
+        self.paper_weight_spin.setDecimals(0)
+        self.paper_weight_spin.setSuffix(" گرم/مترمربع")
+        self.paper_weight_spin.setToolTip(
+            "گراماژ کاغذ: وزن یک مترمربع از کاغذ بر حسب گرم — مثلاً تحریر ۸۰ یعنی ۸۰ گرم/مترمربع.\n"
+            "از این مقدار همراه با ابعاد ورق و قیمت هر کیلوگرم، قیمت یک ورق محاسبه می‌شود.")
+        weight_label = QLabel("گراماژ کاغذ (وزن):")
+        weight_label.setToolTip(self.paper_weight_spin.toolTip())
+        form.addRow(weight_label, self.paper_weight_spin)
 
         self.paper_height_spin = QDoubleSpinBox()
         self.paper_height_spin.setMaximum(999999)
@@ -59,7 +66,10 @@ class PaperCalcTab(QWidget):
 
         self.paper_bundle_weight_spin = QDoubleSpinBox()
         self.paper_bundle_weight_spin.setMaximum(999999)
-        form.addRow("وزن در بند:", self.paper_bundle_weight_spin)
+        self.paper_bundle_weight_spin.setSuffix(" کیلوگرم")
+        self.paper_bundle_weight_spin.setToolTip(
+            "وزن کل یک بند کاغذ (اختیاری، فقط برای ثبت در کتابخانه).")
+        form.addRow("وزن بند:", self.paper_bundle_weight_spin)
 
         self.paper_price_spin = QDoubleSpinBox()
         self.paper_price_spin.setMaximum(9999999999.99)
