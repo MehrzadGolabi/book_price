@@ -45,6 +45,7 @@ class ReportData:
     features: list = field(default_factory=list)      # [(label, value)]
     cost_groups: list = field(default_factory=list)   # [(group, [(label, number)])]
     royalty_pct: float = 0.0
+    tarjomeh_pct: float = 0.0                          # translation as % of costs
     total_cost: float = 0.0                            # final, royalty applied
     single_cost: float = 0.0
     pricing_multiplier: float = 0.0                    # 0 → pricing section unavailable
@@ -98,6 +99,8 @@ def _collect_body_items(data: ReportData):
             items.append(('row', f"جمع {group_name}",
                           f"{sum(v for _, v in nonzero):,.0f}", 'subtotal'))
         items.append(('row', "حق تالیف", f"{data.royalty_pct:g} ٪", 'normal'))
+        if data.tarjomeh_pct > 0:
+            items.append(('row', "حق ترجمه", f"{data.tarjomeh_pct:g} ٪", 'normal'))
 
     return items
 
@@ -228,9 +231,9 @@ class _SinglePage:
         ty = y - 0.55 * cm
         self._cell("جمع کل هزینه‌ها", f"{d.total_cost:,.0f} تومان", 0, ty, _RED, 11)
         self._cell("هزینه تمام شده هر جلد", f"{d.single_cost:,.0f} تومان", 1, ty, _GREEN, 11)
-        if d.royalty_pct > 0 and d.include_costs:
+        if (d.royalty_pct > 0 or d.tarjomeh_pct > 0) and d.include_costs:
             subtotal = sum(v for _, grp in d.cost_groups for _, v in grp)
-            self._cell("جمع پیش از حق تالیف", f"{subtotal:,.0f} تومان", 2, ty, _GRAY, 9.5)
+            self._cell("جمع پیش از درصدها", f"{subtotal:,.0f} تومان", 2, ty, _GRAY, 9.5)
 
         # Pricing summary — header bar, 2×3 cell grid, breakdown footnote
         if self.pricing_height():
@@ -259,7 +262,7 @@ class _SinglePage:
                 ("سهم توزیع", f"{d.distribution_pct:g} ٪", (0, 0, 0)),
                 ("درآمد خالص ناشر (هر جلد)", f"{net:,.0f} تومان", (0, 0, 0)),
                 ("نقطه سر به سر", be_txt, (0, 0, 0)),
-                (f"سود فروش کامل ({d.tiraj:,} جلد)", profit_txt, profit_color),
+                (f"سود ناخالص فروش کامل ({d.tiraj:,} جلد)", profit_txt, profit_color),
             ]
             for i, (label, value, color) in enumerate(cells):
                 row_i, col_i = divmod(i, 3)

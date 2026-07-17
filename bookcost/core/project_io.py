@@ -13,7 +13,11 @@ from bookcost.core.db import DETAIL_COLUMNS, PROJECT_COLUMNS
 from bookcost.core.fields import TYPE_FIELD_COLUMNS
 
 FORMAT_NAME = 'shahreqalam-book-project'
-FORMAT_VERSION = 1
+FORMAT_VERSION = 2          # v2 adds 'papers' and the series columns
+
+# Proprietary extension for exported projects (double-clickable via the
+# installer's file association). The content is plain UTF-8 JSON.
+FILE_EXTENSION = '.ketab'
 
 
 def export_project(db, project_id: int) -> dict:
@@ -30,6 +34,7 @@ def export_project(db, project_id: int) -> dict:
         'exported_at': jdatetime.datetime.now().strftime("%Y/%m/%d %H:%M"),
         'project': {c: project.get(c) for c in PROJECT_COLUMNS},
         'details': {c: details.get(c) for c in DETAIL_COLUMNS},
+        'papers': db.get_project_papers(project_id),
     }
 
 
@@ -56,6 +61,14 @@ def import_project(db, data: dict) -> int:
     d = {c: src_d.get(c) for c in DETAIL_COLUMNS}
 
     new_id = db.insert_project(p, d)
+
+    # Multiple paper types (format v2+; older files simply lack the key)
+    papers = data.get('papers')
+    if isinstance(papers, list):
+        valid = [e for e in papers
+                 if isinstance(e, dict) and e.get('section') in ('matn', 'jeld')]
+        if valid:
+            db.replace_project_papers(new_id, valid)
 
     # Register imported type values so the editable combos list them
     for category, col in TYPE_FIELD_COLUMNS.items():

@@ -172,3 +172,60 @@ def test_paper_unit_price_formula0_zero_dims_returns_zero():
 def test_paper_unit_price_formula1_zero_count_returns_zero():
     price = calc.compute_paper_unit_price(1, height=0, length=0, weight=0, price=500_000, count=0)
     assert price == 0.0
+
+
+# ── Multi-volume series & multi-paper & translation pct ─────────────────────
+
+def _auto(**overrides):
+    kwargs = dict(
+        form_matn=8, sides_matn=2, form_jeld=1, sides_jeld=1,
+        tiraj=1000, waste_pct=0.0,
+        unit_price_matn=1000.0, unit_price_jeld=2000.0,
+        text_colors=1, cover_colors=4,
+        zinc_price_matn=100_000, zinc_price_jeld=100_000,
+    )
+    kwargs.update(overrides)
+    return calc.compute_auto_costs(**kwargs)
+
+
+def test_series_shares_cover_paper_and_zinc():
+    single = _auto()
+    shared = _auto(series_volumes=2)
+    # Cover paper halves; text paper unchanged
+    assert shared['هزینه کاغذ جلد'] == single['هزینه کاغذ جلد'] / 2
+    assert shared['هزینه کاغذ متن'] == single['هزینه کاغذ متن']
+    # Zinc: matn part (8*1*100k) unchanged, jeld part (1*4*100k) halves
+    assert shared['هزینه زینک'] == 8 * 100_000 + (4 * 100_000) / 2
+
+
+def test_multi_paper_replaces_single_matn():
+    papers = [
+        {'form_count': 6, 'unit_price': 1000.0},
+        {'form_count': 2, 'unit_price': 5000.0},
+    ]
+    result = _auto(papers_matn=papers)
+    # (6/2)*1000*1000 + (2/2)*1000*5000 = 3_000_000 + 5_000_000
+    assert result['هزینه کاغذ متن'] == 8_000_000.0
+
+
+def test_multi_paper_jeld_with_series():
+    papers = [{'form_count': 2, 'unit_price': 3000.0}]
+    result = _auto(papers_jeld=papers, sides_jeld=1, series_volumes=3)
+    # (2/1)*1000*3000 / 3 volumes
+    assert abs(result['هزینه کاغذ جلد'] - 2_000_000.0) < 0.01
+
+
+def test_totals_with_translation_pct():
+    costs = {'a': 1000.0}
+    r = calc.compute_totals(costs, royalty_pct=10.0, tiraj=100, tarjomeh_pct=15.0)
+    assert abs(r['total_cost'] - 1250.0) < 0.01
+    assert abs(r['cost_per_book'] - 12.5) < 0.01
+
+
+def test_totals_series_divides_cover_print():
+    costs = {'هزینه چاپ جلد': 900_000.0, 'هزینه صحافی': 100_000.0}
+    r = calc.compute_totals(costs, royalty_pct=0.0, tiraj=100, series_volumes=3)
+    assert abs(r['total_cost'] - (300_000.0 + 100_000.0)) < 0.01
+    assert r['adjusted_costs']['هزینه چاپ جلد'] == 300_000.0
+    # input dict untouched
+    assert costs['هزینه چاپ جلد'] == 900_000.0

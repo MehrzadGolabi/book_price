@@ -22,11 +22,12 @@ DefaultGroupName={#MyAppName}
 AllowNoIcons=yes
 PrivilegesRequiredOverridesAllowed=dialog
 OutputBaseFilename=BookCostCalculator-Setup-{#MyAppVersion}
-; Optional installer icon — drop an .ico at the repo root and uncomment:
-;SetupIconFile=shghalam.ico
+SetupIconFile=resources\shahreqalam.ico
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
+; Register the .ketab project-file association
+ChangesAssociations=yes
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -39,6 +40,13 @@ Source: "dist\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "config.ini"; DestDir: "{app}"; Flags: ignoreversion
 ; Fonts/stylesheet/logo are bundled inside the exe by BookCostCalculator.spec;
 ; copies next to the exe would also be found (bookcost/resources.py fallback).
+
+[Registry]
+; Double-clicking a .ketab export opens the app and imports the project
+Root: HKA; Subkey: "Software\Classes\.ketab"; ValueType: string; ValueName: ""; ValueData: "ShahreQalamKetab"; Flags: uninsdeletevalue
+Root: HKA; Subkey: "Software\Classes\ShahreQalamKetab"; ValueType: string; ValueName: ""; ValueData: "پروژه کتاب شهرقلم"; Flags: uninsdeletekey
+Root: HKA; Subkey: "Software\Classes\ShahreQalamKetab\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\{#MyAppExeName},0"
+Root: HKA; Subkey: "Software\Classes\ShahreQalamKetab\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExeName}"" ""%1"""
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"

@@ -111,7 +111,7 @@ class PricingTab(QWidget):
         main_vbox.addWidget(grp_b)
 
         # ── Part C: Scenario table ───────────────────────────────────────
-        grp_c = QGroupBox("جدول سناریوها")
+        grp_c = QGroupBox("جدول سناریوها (سود ناخالص — پیش از کسر تخفیف‌ها)")
         grp_c_vbox = QVBoxLayout(grp_c)
 
         self.scenario_table = QTableWidget(4, 3)
@@ -179,7 +179,7 @@ class PricingTab(QWidget):
                 profit = net_per_copy * tiraj - total_cost
                 self.lbl_profit_status.setText(
                     f"✓ تیراژ {tiraj:,} جلد از نقطه سر به سر ({break_even:,}) عبور کرده | "
-                    f"سود تخمینی فروش کامل: {profit:,.0f} تومان"
+                    f"سود ناخالص تخمینی فروش کامل: {profit:,.0f} تومان"
                 )
                 self.lbl_profit_status.setStyleSheet("color: #4caf50; font-weight: bold;")
             else:

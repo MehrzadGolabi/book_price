@@ -1,6 +1,7 @@
 """Project list tab: search, open, create."""
 
 from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMessageBox, QPushButton,
     QStackedWidget, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
@@ -29,8 +30,8 @@ class ProjectsTab(QWidget):
         search_layout.addWidget(self.search_input)
         search_layout.addWidget(search_btn)
 
-        self.project_table = QTableWidget(0, 4)
-        self.project_table.setHorizontalHeaderLabels(["شناسه", "عنوان کتاب", "تاریخ", "تیراژ"])
+        self.project_table = QTableWidget(0, 5)
+        self.project_table.setHorizontalHeaderLabels(["شناسه", "عنوان کتاب", "سری", "تاریخ", "تیراژ"])
         self.project_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.project_table.setSelectionBehavior(QTableWidget.SelectRows)
         self.project_table.setEditTriggers(QTableWidget.NoEditTriggers)
@@ -60,10 +61,20 @@ class ProjectsTab(QWidget):
             self.project_table.setUpdatesEnabled(False)
             self.project_table.setRowCount(len(results))
             for row_idx, row_data in enumerate(results):
-                self.project_table.setItem(row_idx, 0, QTableWidgetItem(str(row_data['id'])))
-                self.project_table.setItem(row_idx, 1, QTableWidgetItem(row_data['title']))
-                self.project_table.setItem(row_idx, 2, QTableWidgetItem(row_data['creation_date']))
-                self.project_table.setItem(row_idx, 3, QTableWidgetItem(str(row_data['tiraj'])))
+                row = dict(row_data)
+                if row.get('series_name') or (row.get('series_volumes') or 1) > 1:
+                    series_txt = (f"{row.get('series_name') or '—'} — "
+                                  f"جلد {row.get('volume_no') or '?'} از {row.get('series_volumes') or '?'}")
+                else:
+                    series_txt = ""
+                series_item = QTableWidgetItem(series_txt)
+                if series_txt:
+                    series_item.setForeground(QColor('#64b5f6'))
+                self.project_table.setItem(row_idx, 0, QTableWidgetItem(str(row['id'])))
+                self.project_table.setItem(row_idx, 1, QTableWidgetItem(row['title']))
+                self.project_table.setItem(row_idx, 2, series_item)
+                self.project_table.setItem(row_idx, 3, QTableWidgetItem(row['creation_date']))
+                self.project_table.setItem(row_idx, 4, QTableWidgetItem(str(row['tiraj'])))
             self.project_table.setUpdatesEnabled(True)
             self.project_stack.setCurrentIndex(1 if results else 0)
         except Exception as err:

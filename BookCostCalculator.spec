@@ -29,6 +29,7 @@ exe = EXE(
     a.datas,
     [],
     name='BookCostCalculator',
+    icon='resources/shahreqalam.ico',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

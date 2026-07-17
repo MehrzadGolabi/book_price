@@ -33,7 +33,20 @@ SCHEMA_SQL = """
         tiraj INTEGER NOT NULL,
         royalty_percent REAL,
         total_cost REAL,
-        single_book_cost REAL
+        single_book_cost REAL,
+        series_name TEXT,
+        volume_no INTEGER,
+        series_volumes INTEGER DEFAULT 1
+    );
+
+    CREATE TABLE IF NOT EXISTS project_papers (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id INTEGER NOT NULL,
+        section TEXT NOT NULL,          -- 'matn' | 'jeld'
+        paper_type TEXT,
+        form_count REAL DEFAULT 0,
+        unit_price REAL DEFAULT 0,
+        FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
     );
 
     CREATE TABLE IF NOT EXISTS project_details (
@@ -108,6 +121,14 @@ _MIGRATION_COLS = [
     ("book_type_preset", "TEXT DEFAULT 'شومیز ساده'"),
     ("pricing_multiplier", "REAL DEFAULT 2.5"),
     ("distribution_percent", "REAL DEFAULT 35.0"),
+    ("tarjomeh_percent", "REAL DEFAULT 0"),
+]
+
+# Additive migrations for the projects table (same try/except ALTER pattern)
+_PROJECT_MIGRATION_COLS = [
+    ("series_name", "TEXT"),
+    ("volume_no", "INTEGER"),
+    ("series_volumes", "INTEGER DEFAULT 1"),
 ]
 
 _ZINC_SIZES = [
@@ -119,6 +140,7 @@ _ZINC_SIZES = [
 PROJECT_COLUMNS = [
     'title', 'subtitle', 'creation_date', 'qate', 'tiraj',
     'royalty_percent', 'total_cost', 'single_book_cost',
+    'series_name', 'volume_no', 'series_volumes',
 ]
 
 # Columns of project_details written by _insert_details (everything except project_id)
@@ -140,9 +162,12 @@ DETAIL_COLUMNS = [
     'hazineh_horoofchini', 'hazineh_mojawwez_ershad', 'hazineh_shabok',
     'hazineh_talakoobi', 'hazineh_uv_mowzei', 'hazineh_barjasteh',
     'book_type_preset', 'pricing_multiplier', 'distribution_percent',
+    'tarjomeh_percent',
 ]
 
-# Tables a valid database (or backup) must contain
+# Tables a valid database (or backup) must contain.
+# NOTE: deliberately the ORIGINAL core set — newer tables (project_papers)
+# are created by connect() after a restore, so old backups stay restorable.
 REQUIRED_TABLES = {
     'projects', 'project_details', 'categories', 'paper_calculations',
     'default_cost_mappings', 'zinc_prices',
@@ -194,6 +219,13 @@ class BookDatabase:
             except sqlite3.OperationalError:
                 pass  # column already exists
 
+        for col_name, col_def in _PROJECT_MIGRATION_COLS:
+            try:
+                cur.execute(f"ALTER TABLE projects ADD COLUMN {col_name} {col_def}")
+                self._conn.commit()
+            except sqlite3.OperationalError:
+                pass  # column already exists
+
     def close(self):
         if self._conn is not None:
             self._conn.close()
@@ -211,14 +243,18 @@ class BookDatabase:
 
     def get_projects(self, filter_text: str = '') -> list:
         cur = self._conn.cursor()
+        cols = "id, title, creation_date, tiraj, series_name, volume_no, series_volumes"
         if filter_text:
             cur.execute(
-                "SELECT id, title, creation_date, tiraj FROM projects "
-                "WHERE title LIKE ? ORDER BY id DESC",
-                (f'%{filter_text}%',)
+                f"SELECT {cols} FROM projects "
+                "WHERE title LIKE ? OR series_name LIKE ? "
+                "ORDER BY series_name IS NULL, series_name, volume_no, id DESC",
+                (f'%{filter_text}%', f'%{filter_text}%')
             )
         else:
-            cur.execute("SELECT id, title, creation_date, tiraj FROM projects ORDER BY id DESC")
+            cur.execute(
+                f"SELECT {cols} FROM projects "
+                "ORDER BY series_name IS NULL, series_name, volume_no, id DESC")
         return cur.fetchall()
 
     def get_project(self, project_id: int):
@@ -236,10 +272,12 @@ class BookDatabase:
         cur = self._conn.cursor()
         cur.execute(
             "INSERT INTO projects (title, subtitle, creation_date, qate, tiraj, "
-            "royalty_percent, total_cost, single_book_cost) VALUES (?,?,?,?,?,?,?,?)",
+            "royalty_percent, total_cost, single_book_cost, "
+            "series_name, volume_no, series_volumes) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
             (p['title'], p.get('subtitle'), p['creation_date'], p.get('qate'),
              p['tiraj'], p.get('royalty_percent', 0), p.get('total_cost', 0),
-             p.get('single_book_cost', 0))
+             p.get('single_book_cost', 0),
+             p.get('series_name'), p.get('volume_no'), p.get('series_volumes') or 1)
         )
         project_id = cur.lastrowid
         self._insert_details(cur, project_id, d)
@@ -251,13 +289,42 @@ class BookDatabase:
         cur = self._conn.cursor()
         cur.execute(
             "UPDATE projects SET title=?, subtitle=?, creation_date=?, qate=?, "
-            "tiraj=?, royalty_percent=?, total_cost=?, single_book_cost=? WHERE id=?",
+            "tiraj=?, royalty_percent=?, total_cost=?, single_book_cost=?, "
+            "series_name=?, volume_no=?, series_volumes=? WHERE id=?",
             (p['title'], p.get('subtitle'), p['creation_date'], p.get('qate'),
              p['tiraj'], p.get('royalty_percent', 0), p.get('total_cost', 0),
-             p.get('single_book_cost', 0), project_id)
+             p.get('single_book_cost', 0),
+             p.get('series_name'), p.get('volume_no'), p.get('series_volumes') or 1,
+             project_id)
         )
         cur.execute("DELETE FROM project_details WHERE project_id = ?", (project_id,))
         self._insert_details(cur, project_id, d)
+        self._conn.commit()
+
+    # ── Project papers (multiple paper types per project) ─────────────────
+
+    def get_project_papers(self, project_id: int) -> list:
+        """Rows ordered by section then id: [{'section', 'paper_type',
+        'form_count', 'unit_price'}, ...]."""
+        cur = self._conn.cursor()
+        cur.execute(
+            "SELECT section, paper_type, form_count, unit_price FROM project_papers "
+            "WHERE project_id = ? ORDER BY section, id",
+            (project_id,)
+        )
+        return [dict(row) for row in cur.fetchall()]
+
+    def replace_project_papers(self, project_id: int, papers: list):
+        """Replaces all paper rows of a project. Each entry needs keys
+        section/paper_type/form_count/unit_price."""
+        cur = self._conn.cursor()
+        cur.execute("DELETE FROM project_papers WHERE project_id = ?", (project_id,))
+        cur.executemany(
+            "INSERT INTO project_papers (project_id, section, paper_type, form_count, unit_price) "
+            "VALUES (?,?,?,?,?)",
+            [(project_id, e['section'], e.get('paper_type') or '',
+              e.get('form_count') or 0, e.get('unit_price') or 0) for e in papers]
+        )
         self._conn.commit()
 
     def _insert_details(self, cur, project_id: int, d: dict):

@@ -112,6 +112,18 @@ class CostCalculator:
         "سفارشی":    (None, None),
     }
 
+    @staticmethod
+    def multi_paper_cost(papers: list, sides: int, tiraj: int, waste: float) -> float:
+        """Sums sheet costs over multiple paper entries.
+
+        Each entry: {'form_count': float, 'unit_price': float}. `waste` is the
+        multiplier (1.0 + pct/100)."""
+        sides = max(1, sides)
+        return sum(
+            ((e.get('form_count') or 0) / sides) * tiraj * waste * (e.get('unit_price') or 0)
+            for e in papers
+        )
+
     def compute_auto_costs(
         self,
         form_matn: int, sides_matn: int,
@@ -120,26 +132,69 @@ class CostCalculator:
         unit_price_matn: float, unit_price_jeld: float,
         text_colors: int, cover_colors: int,
         zinc_price_matn: float, zinc_price_jeld: float,
+        papers_matn: list = None, papers_jeld: list = None,
+        series_volumes: int = 1,
     ) -> dict:
-        """Returns {هزینه کاغذ متن, هزینه کاغذ جلد, هزینه زینک} as computed values."""
+        """Returns {هزینه کاغذ متن, هزینه کاغذ جلد, هزینه زینک} as computed values.
+
+        If a papers list is given (multi paper-type mode), it replaces the
+        single form/unit-price calculation for that section.
+
+        For a multi-volume series (series_volumes > 1) the covers of all
+        volumes are printed together on shared forms, so the cover paper and
+        cover zinc costs are split equally between the volumes.
+        """
         sides_matn = max(1, sides_matn)
         sides_jeld = max(1, sides_jeld)
+        n_vol = max(1, series_volumes)
         waste = 1.0 + waste_pct / 100.0
-        paper_matn = (form_matn / sides_matn) * tiraj * waste * unit_price_matn
-        paper_jeld = (form_jeld / sides_jeld) * tiraj * waste * unit_price_jeld
-        zinc_cost = (form_matn * text_colors * zinc_price_matn) + (form_jeld * cover_colors * zinc_price_jeld)
+
+        if papers_matn:
+            paper_matn = self.multi_paper_cost(papers_matn, sides_matn, tiraj, waste)
+        else:
+            paper_matn = (form_matn / sides_matn) * tiraj * waste * unit_price_matn
+
+        if papers_jeld:
+            paper_jeld = self.multi_paper_cost(papers_jeld, sides_jeld, tiraj, waste)
+        else:
+            paper_jeld = (form_jeld / sides_jeld) * tiraj * waste * unit_price_jeld
+        paper_jeld /= n_vol
+
+        zinc_matn = form_matn * text_colors * zinc_price_matn
+        zinc_jeld = (form_jeld * cover_colors * zinc_price_jeld) / n_vol
         return {
             'هزینه کاغذ متن': paper_matn,
             'هزینه کاغذ جلد': paper_jeld,
-            'هزینه زینک':     zinc_cost,
+            'هزینه زینک':     zinc_matn + zinc_jeld,
         }
 
-    def compute_totals(self, cost_values: dict, royalty_pct: float, tiraj: int) -> dict:
-        """Returns {total_cost, cost_per_book}. cost_per_book is 0 if tiraj is 0."""
-        total = sum(cost_values.values())
-        final = total * (1.0 + royalty_pct / 100.0)
+    @staticmethod
+    def apply_series_adjustments(cost_values: dict, series_volumes: int) -> dict:
+        """Returns cost values adjusted for a multi-volume series.
+
+        هزینه چاپ جلد is entered for the WHOLE series (covers print together),
+        so this volume carries an equal share of it. The auto-computed cover
+        paper/zinc fields are already per-volume shares."""
+        n_vol = max(1, series_volumes)
+        if n_vol == 1:
+            return dict(cost_values)
+        adjusted = dict(cost_values)
+        if 'هزینه چاپ جلد' in adjusted:
+            adjusted['هزینه چاپ جلد'] = adjusted['هزینه چاپ جلد'] / n_vol
+        return adjusted
+
+    def compute_totals(self, cost_values: dict, royalty_pct: float, tiraj: int,
+                       tarjomeh_pct: float = 0.0, series_volumes: int = 1) -> dict:
+        """Returns {total_cost, cost_per_book, adjusted_costs}.
+
+        Royalty and (optional) translation percentages are applied on top of
+        the summed costs; series adjustments are applied first."""
+        adjusted = self.apply_series_adjustments(cost_values, series_volumes)
+        total = sum(adjusted.values())
+        final = total * (1.0 + royalty_pct / 100.0 + tarjomeh_pct / 100.0)
         cost_per_book = final / tiraj if tiraj > 0 else 0.0
-        return {'total_cost': final, 'cost_per_book': cost_per_book}
+        return {'total_cost': final, 'cost_per_book': cost_per_book,
+                'adjusted_costs': adjusted}
 
     def compute_optimal_orientation(
         self, book_w: float, book_h: float, paper_w: float, paper_h: float

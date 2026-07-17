@@ -19,6 +19,7 @@ from bookcost.core.fields import (
     AUTO_COST_FIELDS, COST_FIELD_COLUMNS, DYNAMIC_TYPE_CATEGORIES, TYPE_FIELD_COLUMNS,
 )
 from bookcost.ui.dialogs.paper_price_dialog import PaperPriceDialog
+from bookcost.ui.widgets.paper_list_widget import PaperListWidget
 from bookcost.ui.widgets.print_layout_widget import PrintLayoutWidget
 
 
@@ -32,6 +33,7 @@ class DetailsTab(QWidget):
         self.inputs = {}
         self.cost_inputs = {}
         self.cost_input_rows = {}
+        self.cost_row_labels = {}
         self.cost_group_boxes = {}
         self._build_ui()
         self._connect_signals()
@@ -52,6 +54,7 @@ class DetailsTab(QWidget):
         label = QLabel(field_name + ":")
         label.setMinimumWidth(200)
         label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.cost_row_labels[field_name] = label
         spin = QDoubleSpinBox()
         spin.setMaximum(9_999_999_999.99)
         spin.setGroupSeparatorShown(True)
@@ -113,6 +116,34 @@ class DetailsTab(QWidget):
         form_layout.addRow("عنوان کتاب:", self.inputs['عنوان کتاب'])
         form_layout.addRow("زیر عنوان:", self.inputs['زیر عنوان کتاب'])
         form_layout.addRow("تاریخ:", self.inputs['تاریخ'])
+
+        # ── Multi-volume series ───────────────────────────────────────────
+        self.series_chk = QCheckBox("کتاب چند جلدی (بخشی از یک سری)")
+        form_layout.addRow("", self.series_chk)
+
+        series_widget = QWidget()
+        series_layout = QFormLayout(series_widget)
+        series_layout.setContentsMargins(16, 0, 0, 0)
+        self.series_name_input = QLineEdit()
+        self.series_name_input.setPlaceholderText("نام سری (مثلاً: دانشنامه کودک)")
+        self.volume_no_spin = QSpinBox()
+        self.volume_no_spin.setRange(1, 99)
+        self.series_volumes_spin = QSpinBox()
+        self.series_volumes_spin.setRange(2, 99)
+        series_layout.addRow("نام سری:", self.series_name_input)
+        series_layout.addRow("شماره این جلد:", self.volume_no_spin)
+        series_layout.addRow("تعداد کل جلدهای سری:", self.series_volumes_spin)
+        series_hint = QLabel(
+            "جلدِ همه جلدهای سری روی یک فرم چاپ می‌شود؛ هزینه کاغذ جلد و زینک جلد "
+            "به‌طور خودکار بین جلدها تقسیم می‌شود و «هزینه چاپ جلد» را برای کل سری وارد کنید."
+        )
+        series_hint.setWordWrap(True)
+        series_hint.setStyleSheet("color: #ffb74d; font-size: 12px;")
+        series_layout.addRow("", series_hint)
+        self.series_widget = series_widget
+        self.series_widget.setVisible(False)
+        form_layout.addRow(self.series_widget)
+
         form_layout.addRow("تیراژ:", self.inputs['تیراژ'])
         form_layout.addRow("قطع کتاب:", self.inputs['قطع'])
         form_layout.addRow("", self.lbl_optimal_paper)
@@ -209,6 +240,15 @@ class DetailsTab(QWidget):
         self.royalty_input.setDecimals(0)
         form_layout.addRow("حق تالیف درصدی:", self.royalty_input)
 
+        self.tarjomeh_input = QDoubleSpinBox()
+        self.tarjomeh_input.setSuffix(" %")
+        self.tarjomeh_input.setMaximum(100.0)
+        self.tarjomeh_input.setDecimals(0)
+        self.tarjomeh_input.setToolTip(
+            "هزینه ترجمه به‌صورت درصدی از جمع هزینه‌ها — مانند حق تالیف درصدی. "
+            "اگر مبلغ ثابت ترجمه را در «هزینه ترجمه» وارد کرده‌اید این را صفر بگذارید.")
+        form_layout.addRow("حق ترجمه درصدی:", self.tarjomeh_input)
+
         calc_btn = QPushButton("ثبت اطلاعات و انجام محاسبات نهایی")
         calc_btn.setStyleSheet("padding: 10px; font-weight: bold; background-color: #27ae60; color: white;")
         calc_btn.clicked.connect(self.calculate_requested.emit)
@@ -264,6 +304,9 @@ class DetailsTab(QWidget):
         matn_price_layout.addWidget(btn_calc_matn)
         calc_layout.addRow("قیمت واحد هر ورق کاغذ متن:", matn_price_row)
 
+        self.papers_matn_list = PaperListWidget("نوع کاغذ متن (مثلاً تحریر ۸۰)")
+        calc_layout.addRow("چند نوع کاغذ متن:", self.papers_matn_list)
+
         # Cover (jeld) setup
         self.form_jeld_spin = QSpinBox()
         self.double_sided_jeld_chk = QCheckBox("چاپ دورو (جلد)")
@@ -297,6 +340,9 @@ class DetailsTab(QWidget):
         jeld_price_layout.addWidget(btn_calc_jeld)
         calc_layout.addRow("قیمت واحد هر ورق کاغذ جلد:", jeld_price_row)
 
+        self.papers_jeld_list = PaperListWidget("نوع کاغذ جلد (مثلاً گلاسه ۱۳۵)")
+        calc_layout.addRow("چند نوع کاغذ جلد:", self.papers_jeld_list)
+
         self.waste_percent_spin = QDoubleSpinBox()
         self.waste_percent_spin.setRange(0, 50)
         self.waste_percent_spin.setDecimals(1)
@@ -322,6 +368,10 @@ class DetailsTab(QWidget):
 
         self.double_sided_matn_chk.toggled.connect(self.auto_calculate_costs)
         self.double_sided_jeld_chk.toggled.connect(self.auto_calculate_costs)
+        self.series_chk.toggled.connect(self._on_series_toggled)
+        self.series_volumes_spin.valueChanged.connect(self.auto_calculate_costs)
+        self.papers_matn_list.changed.connect(self._on_papers_changed)
+        self.papers_jeld_list.changed.connect(self._on_papers_changed)
         self.color_matn_combo.currentIndexChanged.connect(self.auto_calculate_costs)
         self.color_jeld_combo.currentIndexChanged.connect(self.auto_calculate_costs)
         self.zinc_size_matn_combo.currentIndexChanged.connect(self.refresh_zinc_price_labels)
@@ -341,6 +391,53 @@ class DetailsTab(QWidget):
 
     # ── Live behaviors ─────────────────────────────────────────────────────
 
+    def _on_series_toggled(self, checked: bool):
+        self.series_widget.setVisible(checked)
+        label = self.cost_row_labels.get('هزینه چاپ جلد')
+        if label:
+            label.setText("هزینه چاپ جلد (کل سری):" if checked else "هزینه چاپ جلد:")
+        self.auto_calculate_costs()
+
+    def _on_papers_changed(self):
+        """Multi-paper mode disables the corresponding single-paper inputs."""
+        matn_multi = bool(self.papers_matn_list.entries())
+        jeld_multi = bool(self.papers_jeld_list.entries())
+        for w in (self.unit_price_paper_matn_spin,):
+            w.setEnabled(not matn_multi)
+            w.setToolTip("چند نوع کاغذ متن فعال است؛ قیمت‌ها از لیست خوانده می‌شود."
+                         if matn_multi else "")
+        for w in (self.unit_price_paper_jeld_spin, self.form_jeld_spin):
+            w.setEnabled(not jeld_multi)
+            w.setToolTip("چند نوع کاغذ جلد فعال است؛ فرم‌ها و قیمت‌ها از لیست خوانده می‌شود."
+                         if jeld_multi else "")
+        self.auto_calculate_costs()
+
+    def series_info(self) -> dict:
+        """{'series_name', 'volume_no', 'series_volumes'} — Nones when off."""
+        if not self.series_chk.isChecked():
+            return {'series_name': None, 'volume_no': None, 'series_volumes': 1}
+        return {
+            'series_name': self.series_name_input.text().strip() or None,
+            'volume_no': self.volume_no_spin.value(),
+            'series_volumes': self.series_volumes_spin.value(),
+        }
+
+    def series_volumes(self) -> int:
+        return self.series_volumes_spin.value() if self.series_chk.isChecked() else 1
+
+    def papers(self) -> list:
+        """All multi-paper entries tagged with their section for persistence."""
+        out = []
+        for e in self.papers_matn_list.entries():
+            out.append({**e, 'section': 'matn'})
+        for e in self.papers_jeld_list.entries():
+            out.append({**e, 'section': 'jeld'})
+        return out
+
+    def set_papers(self, rows: list):
+        self.papers_matn_list.set_entries([r for r in rows if r.get('section') == 'matn'])
+        self.papers_jeld_list.set_entries([r for r in rows if r.get('section') == 'jeld'])
+
     def refresh_zinc_price_labels(self):
         for label, combo in [
             (self.zinc_price_matn_label, self.zinc_size_matn_combo),
@@ -356,10 +453,18 @@ class DetailsTab(QWidget):
 
     def auto_calculate_costs(self, *args):
         color_counts = {0: 1, 1: 2, 2: 4}
+        papers_matn = self.papers_matn_list.entries()
+        papers_jeld = self.papers_jeld_list.entries()
+        # Zinc is per printed form: with multi-paper the form total comes
+        # from the paper list, otherwise from the single form spinboxes.
+        form_matn = (sum(e['form_count'] for e in papers_matn)
+                     if papers_matn else self.form_matn_spin.value())
+        form_jeld = (sum(e['form_count'] for e in papers_jeld)
+                     if papers_jeld else self.form_jeld_spin.value())
         results = self.calculator.compute_auto_costs(
-            form_matn=self.form_matn_spin.value(),
+            form_matn=form_matn,
             sides_matn=2 if self.double_sided_matn_chk.isChecked() else 1,
-            form_jeld=self.form_jeld_spin.value(),
+            form_jeld=form_jeld,
             sides_jeld=2 if self.double_sided_jeld_chk.isChecked() else 1,
             tiraj=self.inputs['تیراژ'].value(),
             waste_pct=self.waste_percent_spin.value(),
@@ -369,6 +474,9 @@ class DetailsTab(QWidget):
             cover_colors=color_counts.get(self.color_jeld_combo.currentIndex(), 4),
             zinc_price_matn=self.db.get_zinc_price(self.zinc_size_matn_combo.currentText()),
             zinc_price_jeld=self.db.get_zinc_price(self.zinc_size_jeld_combo.currentText()),
+            papers_matn=papers_matn,
+            papers_jeld=papers_jeld,
+            series_volumes=self.series_volumes(),
         )
         for field, value in results.items():
             self.cost_inputs[field].setValue(value)
@@ -539,6 +647,9 @@ class DetailsTab(QWidget):
             widget = self.inputs[key]
             val = widget.currentText() if isinstance(widget, QComboBox) else widget.text()
             rows.append((key, val))
+        info = self.series_info()
+        if info['series_name'] or (info['series_volumes'] or 1) > 1:
+            rows.append(("سری", f"{info['series_name'] or '—'} — جلد {info['volume_no']} از {info['series_volumes']}"))
         return rows
 
     def report_features(self) -> list:
@@ -559,9 +670,29 @@ class DetailsTab(QWidget):
             ("تعداد رنگ جلد", self.color_jeld_combo.currentText()),
             ("ابعاد زینک جلد", self.zinc_size_jeld_combo.currentText()),
             ("ضایعات کاغذ", f"{self.waste_percent_spin.value():g} ٪"),
-            ("قیمت واحد کاغذ متن", f"{self.unit_price_paper_matn_spin.value():,.0f} تومان"),
-            ("قیمت واحد کاغذ جلد", f"{self.unit_price_paper_jeld_spin.value():,.0f} تومان"),
         ]
+        # Paper pricing: either the multi-paper lists or the single prices
+        papers_matn = self.papers_matn_list.entries()
+        papers_jeld = self.papers_jeld_list.entries()
+        if papers_matn:
+            for i, e in enumerate(papers_matn, 1):
+                name = e['paper_type'] or f"کاغذ {i}"
+                specs.append((f"کاغذ متن {i} ({name})",
+                              f"{e['form_count']:g} فرم × {e['unit_price']:,.0f} تومان"))
+        else:
+            specs.append(("قیمت واحد کاغذ متن",
+                          f"{self.unit_price_paper_matn_spin.value():,.0f} تومان"))
+        if papers_jeld:
+            for i, e in enumerate(papers_jeld, 1):
+                name = e['paper_type'] or f"کاغذ {i}"
+                specs.append((f"کاغذ جلد {i} ({name})",
+                              f"{e['form_count']:g} فرم × {e['unit_price']:,.0f} تومان"))
+        else:
+            specs.append(("قیمت واحد کاغذ جلد",
+                          f"{self.unit_price_paper_jeld_spin.value():,.0f} تومان"))
+        if self.series_chk.isChecked():
+            specs.append(("تقسیم هزینه‌های جلد",
+                          f"بین {self.series_volumes_spin.value()} جلد سری"))
         if self.book_dims_row_widget.isVisible():
             specs.insert(1, ("ابعاد کتاب",
                              f"{self.book_width_spin.value():g}×{self.book_height_spin.value():g} cm"))
@@ -570,6 +701,9 @@ class DetailsTab(QWidget):
         return specs
 
     # ── Persistence mapping ────────────────────────────────────────────────
+
+    def tarjomeh_pct(self) -> float:
+        return self.tarjomeh_input.value()
 
     def collect_project(self) -> dict:
         """Row for the ``projects`` table (totals are added by the main window)."""
@@ -580,6 +714,7 @@ class DetailsTab(QWidget):
             'qate': self.inputs['قطع'].currentText(),
             'tiraj': self.tiraj(),
             'royalty_percent': self.royalty_pct(),
+            **self.series_info(),
         }
 
     def collect_details(self) -> dict:
@@ -605,6 +740,7 @@ class DetailsTab(QWidget):
             'pages_per_sheet': self.form_matn_spin.value(),
             'total_pages': self.total_pages_spin.value(),
             'book_type_preset': self.book_type_combo.currentText(),
+            'tarjomeh_percent': self.tarjomeh_pct(),
         }
         for category, col in TYPE_FIELD_COLUMNS.items():
             d[col] = self.inputs[category].currentText()
@@ -612,8 +748,9 @@ class DetailsTab(QWidget):
             d[col] = self.cost_inputs[field].value()
         return d
 
-    def populate(self, project, details):
-        """Fills the form from a projects row + optional project_details row."""
+    def populate(self, project, details, papers: list = None):
+        """Fills the form from a projects row + optional details/papers rows."""
+        project = dict(project)
         self.inputs['عنوان کتاب'].setText(project['title'])
         self.inputs['زیر عنوان کتاب'].setText(project['subtitle'] if project['subtitle'] else '')
         self.inputs['تاریخ'].setText(project['creation_date'])
@@ -621,9 +758,21 @@ class DetailsTab(QWidget):
         self.inputs['تیراژ'].setValue(project['tiraj'])
         self.royalty_input.setValue(project['royalty_percent'])
 
+        is_series = bool(project.get('series_name')) or (project.get('series_volumes') or 1) > 1
+        self.series_chk.setChecked(is_series)
+        if is_series:
+            self.series_name_input.setText(project.get('series_name') or '')
+            self.volume_no_spin.setValue(project.get('volume_no') or 1)
+            self.series_volumes_spin.setValue(max(2, project.get('series_volumes') or 2))
+
+        self.set_papers(papers or [])
+
         if not details:
             return
         details = dict(details)
+
+        if details.get('tarjomeh_percent') is not None:
+            self.tarjomeh_input.setValue(float(details['tarjomeh_percent']))
 
         for category, col in TYPE_FIELD_COLUMNS.items():
             if details.get(col):
@@ -711,6 +860,14 @@ class DetailsTab(QWidget):
             spin.setValue(0.0)
 
         self.royalty_input.setValue(0.0)
+        self.tarjomeh_input.setValue(0.0)
+        self.series_chk.setChecked(False)
+        self.series_name_input.clear()
+        self.volume_no_spin.setValue(1)
+        self.series_volumes_spin.setValue(2)
+        self.papers_matn_list.clear()
+        self.papers_jeld_list.clear()
+        self._on_papers_changed()
 
         self.book_type_combo.blockSignals(True)
         self.book_type_combo.setCurrentText("شومیز ساده")

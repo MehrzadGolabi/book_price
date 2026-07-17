@@ -121,3 +121,55 @@ def test_validate_handles_tricky_paths(tmp_path):
     dest = tricky_dir / 'پشتیبان شهرقلم #2.db'
     src.backup_to(str(dest))
     assert is_valid_database_file(str(dest))
+
+
+def test_papers_and_series_roundtrip(db, tmp_path):
+    pid = _make_project(db)
+    db._conn.execute(
+        "UPDATE projects SET series_name='دانشنامه', volume_no=2, series_volumes=3 WHERE id=?",
+        (pid,))
+    db._conn.commit()
+    db.replace_project_papers(pid, [
+        {'section': 'matn', 'paper_type': 'تحریر ۸۰', 'form_count': 6, 'unit_price': 9000},
+        {'section': 'matn', 'paper_type': 'گلاسه ۱۳۵', 'form_count': 2, 'unit_price': 15000},
+        {'section': 'jeld', 'paper_type': 'مقوا ۲۵۰', 'form_count': 1, 'unit_price': 30000},
+    ])
+
+    path = tmp_path / 'series.ketab'
+    save_project_file(db, pid, str(path))
+    new_id = load_project_file(db, str(path))
+
+    proj = dict(db.get_project(new_id))
+    assert proj['series_name'] == 'دانشنامه'
+    assert proj['volume_no'] == 2
+    assert proj['series_volumes'] == 3
+
+    papers = db.get_project_papers(new_id)
+    assert len(papers) == 3
+    matn = [p for p in papers if p['section'] == 'matn']
+    assert {p['paper_type'] for p in matn} == {'تحریر ۸۰', 'گلاسه ۱۳۵'}
+
+
+def test_import_v1_file_without_papers_still_works(db):
+    data = {'format': FORMAT_NAME, 'version': 1,
+            'project': {'title': 'قدیمی', 'tiraj': 100}, 'details': {}}
+    new_id = import_project(db, data)
+    assert db.get_project_papers(new_id) == []
+
+
+def test_papers_crud(db):
+    pid = _make_project(db)
+    assert db.get_project_papers(pid) == []
+    db.replace_project_papers(pid, [
+        {'section': 'matn', 'paper_type': 'الف', 'form_count': 3, 'unit_price': 100},
+    ])
+    assert len(db.get_project_papers(pid)) == 1
+    db.replace_project_papers(pid, [])
+    assert db.get_project_papers(pid) == []
+    # cascade on project delete
+    db.replace_project_papers(pid, [
+        {'section': 'jeld', 'paper_type': 'ب', 'form_count': 1, 'unit_price': 5},
+    ])
+    db.delete_project(pid)
+    cur = db._conn.execute("SELECT COUNT(*) FROM project_papers WHERE project_id=?", (pid,))
+    assert cur.fetchone()[0] == 0

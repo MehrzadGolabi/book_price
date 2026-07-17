@@ -22,7 +22,7 @@ import shutil
 from bookcost.config import DB_CONFIG
 from bookcost.core.calculator import CostCalculator
 from bookcost.core.db import BookDatabase, is_valid_database_file
-from bookcost.core.project_io import load_project_file, save_project_file
+from bookcost.core.project_io import FILE_EXTENSION, load_project_file, save_project_file
 from bookcost.reporting.pdf_report import ReportData, build_pdf_report
 from bookcost.resources import resource_path
 from bookcost.ui.tabs.calc_tab import CalcTab
@@ -85,10 +85,10 @@ class BookCostCalculator(QMainWindow):
 
     def _build_chrome(self):
         file_menu = self.menuBar().addMenu("فایل")
-        export_project_action = QAction("خروجی گرفتن از پروژه (JSON)...", self)
+        export_project_action = QAction("خروجی گرفتن از پروژه (فایل ketab.)...", self)
         export_project_action.triggered.connect(self.export_project_to_file)
         file_menu.addAction(export_project_action)
-        import_project_action = QAction("وارد کردن پروژه (JSON)...", self)
+        import_project_action = QAction("وارد کردن پروژه...", self)
         import_project_action.triggered.connect(self.import_project_from_file)
         file_menu.addAction(import_project_action)
         file_menu.addSeparator()
@@ -187,11 +187,13 @@ class BookCostCalculator(QMainWindow):
             cost_values,
             royalty_pct=self.details_tab.royalty_pct(),
             tiraj=tiraj,
+            tarjomeh_pct=self.details_tab.tarjomeh_pct(),
+            series_volumes=self.details_tab.series_volumes(),
         )
 
         self.details_tab.save_new_dynamic_types()
         self.calc_tab.set_totals(totals['total_cost'], totals['cost_per_book'])
-        self.calc_tab.update_chart(cost_values)
+        self.calc_tab.update_chart(totals['adjusted_costs'])
         self.refresh_pricing_tab()
         self.tabs.setCurrentWidget(self.calc_tab)
         self.save_project_to_db()
@@ -223,6 +225,7 @@ class BookCostCalculator(QMainWindow):
                 self.db.update_project(self.current_project_id, p, d)
             else:
                 self.current_project_id = self.db.insert_project(p, d)
+            self.db.replace_project_papers(self.current_project_id, self.details_tab.papers())
 
             self.projects_tab.refresh()
             now = jdatetime.datetime.now().strftime("%H:%M:%S")
@@ -246,14 +249,22 @@ class BookCostCalculator(QMainWindow):
                 QMessageBox.warning(self, "خطا", "پروژه‌ای با این شناسه یافت نشد.")
                 return
             details = self.db.get_project_details(project_id)
+            papers = self.db.get_project_papers(project_id)
 
-            self.details_tab.populate(project, details)
+            self.details_tab.populate(project, details, papers)
             if details:
                 details = dict(details)
                 self.pricing_tab.set_values(
                     multiplier=details.get('pricing_multiplier'),
                     distribution_pct=details.get('distribution_percent'),
                 )
+
+            # Restore the stored totals so the calc/pricing/report tabs are
+            # meaningful without forcing a recalculation first
+            row = dict(project)
+            self.calc_tab.set_totals(row.get('total_cost') or 0.0,
+                                     row.get('single_book_cost') or 0.0)
+            self.refresh_pricing_tab()
 
             self.current_project_id = project_id
             self.status_project_label.setText(project['title'])
@@ -349,8 +360,11 @@ class BookCostCalculator(QMainWindow):
             return
         project = self.db.get_project(project_id)
         safe_title = re.sub(r'[\\/:*?"<>|]+', '_', project['title']).strip() or 'project'
+        docs = QStandardPaths.writableLocation(QStandardPaths.DocumentsLocation)
         file_path, _ = QFileDialog.getSaveFileName(
-            self, "خروجی گرفتن از پروژه", f"{safe_title}.json", "JSON Files (*.json)")
+            self, "خروجی گرفتن از پروژه",
+            os.path.join(docs, f"{safe_title}{FILE_EXTENSION}"),
+            f"پروژه کتاب شهرقلم (*{FILE_EXTENSION})")
         if not file_path:
             return
         try:
@@ -362,9 +376,13 @@ class BookCostCalculator(QMainWindow):
 
     def import_project_from_file(self):
         file_path, _ = QFileDialog.getOpenFileName(
-            self, "وارد کردن پروژه", "", "JSON Files (*.json)")
-        if not file_path:
-            return
+            self, "وارد کردن پروژه", "",
+            f"پروژه کتاب (*{FILE_EXTENSION} *.json);;همه فایل‌ها (*)")
+        if file_path:
+            self.import_project_path(file_path)
+
+    def import_project_path(self, file_path: str):
+        """Imports a project file (menu or a double-clicked .ketab from Explorer)."""
         try:
             new_id = load_project_file(self.db, file_path)
         except ValueError as err:
@@ -459,7 +477,9 @@ class BookCostCalculator(QMainWindow):
         if not file_path:
             return
 
-        cost_values = self.details_tab.cost_values()
+        # Series share adjustments applied so the printed rows sum to the total
+        cost_values = self.calculator.apply_series_adjustments(
+            self.details_tab.cost_values(), self.details_tab.series_volumes())
         cost_groups = [
             (group, [(f, cost_values[f]) for f in fields])
             for group, fields in CostCalculator.COST_GROUPS.items()
@@ -473,6 +493,7 @@ class BookCostCalculator(QMainWindow):
             features=self.details_tab.report_features(),
             cost_groups=cost_groups,
             royalty_pct=self.details_tab.royalty_pct(),
+            tarjomeh_pct=self.details_tab.tarjomeh_pct(),
             total_cost=self.calc_tab.total_cost,
             single_cost=self.calc_tab.cost_per_book,
             pricing_multiplier=self.pricing_tab.multiplier(),
