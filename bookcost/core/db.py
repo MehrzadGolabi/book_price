@@ -468,6 +468,16 @@ class BookDatabase:
         )
         return cur.fetchone()
 
+    def get_general_defaults(self) -> list:
+        """Defaults not tied to a type value (category 'عمومی'): rows with
+        target_cost_field + default_cost."""
+        cur = self._conn.cursor()
+        cur.execute(
+            "SELECT target_cost_field, default_cost FROM default_cost_mappings "
+            "WHERE category_name = 'عمومی' ORDER BY id"
+        )
+        return cur.fetchall()
+
     def get_default_costs_batch(self, items: list) -> list:
         """items: list of (category_name, item_value) tuples. Returns all matching rows."""
         if not items:

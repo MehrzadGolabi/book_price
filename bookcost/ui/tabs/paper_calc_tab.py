@@ -1,17 +1,15 @@
 """Paper pre-calculation tab: compute a paper unit price via 3 formulas and
 keep a saved library of calculations (paper_calculations table)."""
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QFormLayout,
+    QComboBox, QDoubleSpinBox, QFormLayout,
     QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMessageBox, QPushButton,
     QSpinBox, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
 
 class PaperCalcTab(QWidget):
-    # (category, item_value, target_cost_field, unit_price) exported to defaults
-    defaults_exported = Signal()
 
     def __init__(self, db, calculator, parent=None):
         super().__init__(parent)
@@ -83,13 +81,9 @@ class PaperCalcTab(QWidget):
         delete_btn = QPushButton("حذف ردیف")
         delete_btn.clicked.connect(self.delete_paper_calculation)
 
-        export_btn = QPushButton("انتقال به مدیریت قیمت‌های پایه")
-        export_btn.clicked.connect(self.export_paper_to_defaults)
-
         btn_layout.addWidget(calc_btn)
         btn_layout.addWidget(save_btn)
         btn_layout.addWidget(delete_btn)
-        btn_layout.addWidget(export_btn)
 
         layout.addLayout(form)
         layout.addLayout(btn_layout)
@@ -232,43 +226,3 @@ class PaperCalcTab(QWidget):
             except Exception as err:
                 QMessageBox.critical(self, "خطا", f"حذف با خطا مواجه شد:\n{err}")
 
-    def export_paper_to_defaults(self):
-        row = self.paper_calc_table.currentRow()
-        if row < 0:
-            QMessageBox.warning(self, "خطا", "لطفاً یک ردیف محاسبه شده را انتخاب کنید.")
-            return
-
-        paper_type = self.paper_calc_table.item(row, 1).text()
-        unit_price = float(self.paper_calc_table.item(row, 9).text().replace(',', ''))
-
-        dialog = QDialog(self)
-        dialog.setWindowTitle("انتقال به قیمت‌های پایه")
-        layout = QFormLayout(dialog)
-
-        cat_combo = QComboBox()
-        cat_combo.addItems(["نوع کاغذ متن", "نوع کاغذ جلد"])
-        layout.addRow("دسته‌بندی (متن/جلد):", cat_combo)
-
-        item_val_input = QLineEdit(paper_type)
-        layout.addRow("مقدار (نام دقیق ویژگی):", item_val_input)
-
-        cost_field_combo = QComboBox()
-        cost_field_combo.addItems(["هزینه کاغذ متن", "هزینه کاغذ جلد"])
-        layout.addRow("فیلد هزینه هدف:", cost_field_combo)
-
-        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, Qt.Horizontal, dialog)
-        buttons.accepted.connect(dialog.accept)
-        buttons.rejected.connect(dialog.reject)
-        layout.addRow(buttons)
-
-        if dialog.exec() == QDialog.Accepted:
-            cat = cat_combo.currentText()
-            val = item_val_input.text().strip()
-            field = cost_field_combo.currentText()
-            try:
-                self.db.upsert_default_mapping(cat, val, field, unit_price)
-                self.db.save_category(cat, val)
-                QMessageBox.information(self, "موفقیت", "انتقال به قیمت‌های پایه با موفقیت انجام شد.")
-                self.defaults_exported.emit()
-            except Exception as err:
-                QMessageBox.critical(self, "خطا", f"انتقال با خطا مواجه شد:\n{err}")

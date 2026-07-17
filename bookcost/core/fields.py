@@ -57,3 +57,26 @@ DYNAMIC_TYPE_CATEGORIES = list(TYPE_FIELD_COLUMNS.keys())
 
 # Cost fields whose values are computed automatically (read-only in the UI)
 AUTO_COST_FIELDS = frozenset({'هزینه زینک', 'هزینه کاغذ متن', 'هزینه کاغذ جلد'})
+
+# ── Default-price ("قیمت پایه") categorization ────────────────────────────
+#
+# Prices live where their data lives:
+#   کاغذ  → the paper-price library (paper_calculations), auto-filled into
+#           the paper unit-price fields/rows
+#   زینک  → the zinc_prices table
+#   type-dependent services → default_cost_mappings rows constrained below
+#   everything else → "general" defaults (GENERAL_CATEGORY) applied directly
+#           to their cost field by دریافت قیمت‌های پایه
+
+# Pseudo-category for defaults not tied to any type value
+GENERAL_CATEGORY = 'عمومی'
+
+# Type categories that may carry a default, and the only cost fields each
+# one is allowed to target (kept small on purpose — paper and zinc types are
+# priced elsewhere, and the auto-computed fields can't take defaults)
+CATEGORY_TARGET_FIELDS = {
+    'نوع چاپ متن': ['هزینه چاپ متن'],
+    'نوع رنگ متن': ['هزینه چاپ متن'],
+    'نوع چاپ جلد': ['هزینه چاپ جلد'],
+    'نوع رنگ جلد': ['هزینه چاپ جلد'],
+}

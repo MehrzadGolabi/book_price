@@ -8,22 +8,28 @@ from PySide6.QtWidgets import (
 )
 
 from bookcost.core.calculator import CostCalculator
-from bookcost.core.fields import AUTO_COST_FIELDS, DYNAMIC_TYPE_CATEGORIES
+from bookcost.core.fields import (
+    AUTO_COST_FIELDS, CATEGORY_TARGET_FIELDS, GENERAL_CATEGORY,
+)
 
 _ZINC_SIZES = ["زینک 2 ورقی", "زینک 2.5 ورقی", "زینک 3.5 ورقی", "زینک 4.5 ورقی", "زینک GTO"]
+
+_GENERAL_LABEL = "هزینه عمومی (مستقل از نوع)"
 
 
 class DefaultsTab(QWidget):
     zinc_prices_changed = Signal()
     # A default mapping matched the selected type value: (cost_field, value)
     cost_applied = Signal(str, float)
+    # User asked to manage paper prices → main window opens the paper library
+    paper_library_requested = Signal()
 
     def __init__(self, db, parent=None):
         super().__init__(parent)
         self.db = db
         self.editing_default_id = None
         self._build_ui()
-        self.populate_default_value_combo(self.def_cat_combo.currentText())
+        self._on_category_changed()
         self.load_default_costs_table()
         self.load_zinc_prices_table()
 
@@ -47,29 +53,39 @@ class DefaultsTab(QWidget):
         # ── Mapping Form Group ─────────────────────────────────────────────
         self.mapping_form_group = QGroupBox("افزودن قیمت پایه جدید")
         form_outer = QVBoxLayout()
-        form = QFormLayout()
+
+        # Papers are priced in the paper library, not here
+        paper_hint_row = QHBoxLayout()
+        paper_hint = QLabel(
+            "قیمت انواع کاغذ اینجا تعریف نمی‌شود — قیمت واحد هر کاغذ در «کتابخانه کاغذ» "
+            "نگه‌داری و به‌طور خودکار در پروژه‌ها بارگذاری می‌شود. قیمت زینک‌ها نیز در جدول بالا است.")
+        paper_hint.setWordWrap(True)
+        paper_hint.setStyleSheet("color: #64b5f6; font-size: 12px;")
+        paper_lib_btn = QPushButton("کتابخانه کاغذ ←")
+        paper_lib_btn.setStyleSheet("padding: 4px 10px; color: #64b5f6; background: transparent; border: 1px solid #64b5f6;")
+        paper_lib_btn.clicked.connect(self.paper_library_requested.emit)
+        paper_hint_row.addWidget(paper_hint, 1)
+        paper_hint_row.addWidget(paper_lib_btn)
+        form_outer.addLayout(paper_hint_row)
+
+        self._form = form = QFormLayout()
 
         self.def_cat_combo = QComboBox()
         self.def_cat_combo.setEditable(False)
-        self.def_cat_combo.addItems(DYNAMIC_TYPE_CATEGORIES)
-        self.def_cat_combo.currentIndexChanged.connect(
-            lambda: self.populate_default_value_combo(self.def_cat_combo.currentText())
-        )
+        self.def_cat_combo.addItems([_GENERAL_LABEL] + list(CATEGORY_TARGET_FIELDS))
+        self.def_cat_combo.currentIndexChanged.connect(self._on_category_changed)
         form.addRow("دسته‌بندی:", self.def_cat_combo)
 
         self.def_value_combo = QComboBox()
         self.def_value_combo.setEditable(True)
         self.def_value_combo.setInsertPolicy(QComboBox.InsertAtBottom)
         self.def_value_combo.currentTextChanged.connect(
-            lambda text: self.apply_default_cost(self.def_cat_combo.currentText(), text)
+            lambda text: self.apply_default_cost(self._current_category(), text)
         )
-        form.addRow("مقدار (نوع):", self.def_value_combo)
+        self._value_label = QLabel("مقدار (نوع):")
+        form.addRow(self._value_label, self.def_value_combo)
 
         self.def_cost_field_combo = QComboBox()
-        all_cost_fields = [f for fields in CostCalculator.COST_GROUPS.values() for f in fields]
-        self.def_cost_field_combo.addItems(
-            [f for f in all_cost_fields if f not in AUTO_COST_FIELDS]
-        )
         form.addRow("فیلد هزینه هدف:", self.def_cost_field_combo)
 
         self.def_cost_spin = QDoubleSpinBox()
@@ -174,6 +190,38 @@ class DefaultsTab(QWidget):
 
     # ── Default cost mappings ──────────────────────────────────────────────
 
+    @staticmethod
+    def _all_manual_fields() -> list:
+        all_fields = [f for fields in CostCalculator.COST_GROUPS.values() for f in fields]
+        return [f for f in all_fields if f not in AUTO_COST_FIELDS]
+
+    def _current_category(self) -> str:
+        """Stored category name for the current selection ('عمومی' for general)."""
+        text = self.def_cat_combo.currentText()
+        return GENERAL_CATEGORY if text == _GENERAL_LABEL else text
+
+    def _on_category_changed(self, *args):
+        """General mode hides the value row and opens up all manual cost
+        fields; a type category shows its values and constrains the target."""
+        category = self._current_category()
+        is_general = category == GENERAL_CATEGORY
+        self._value_label.setVisible(not is_general)
+        self.def_value_combo.setVisible(not is_general)
+
+        self.def_cost_field_combo.blockSignals(True)
+        self.def_cost_field_combo.clear()
+        if is_general:
+            self.def_cost_field_combo.addItems(self._all_manual_fields())
+            self.def_cost_field_combo.setEnabled(True)
+        else:
+            allowed = CATEGORY_TARGET_FIELDS.get(category, [])
+            self.def_cost_field_combo.addItems(allowed)
+            self.def_cost_field_combo.setEnabled(len(allowed) > 1)
+        self.def_cost_field_combo.blockSignals(False)
+
+        if not is_general:
+            self.populate_default_value_combo(category)
+
     def populate_default_value_combo(self, category_name):
         """Fills the value combo with existing items from the chosen category."""
         self.def_value_combo.clear()
@@ -189,8 +237,10 @@ class DefaultsTab(QWidget):
             self.defaults_table.setUpdatesEnabled(False)
             self.defaults_table.setRowCount(len(rows))
             for i, row in enumerate(rows):
+                is_general = row['category_name'] == GENERAL_CATEGORY
                 self.defaults_table.setItem(i, 0, QTableWidgetItem(row['category_name']))
-                self.defaults_table.setItem(i, 1, QTableWidgetItem(row['item_value']))
+                self.defaults_table.setItem(
+                    i, 1, QTableWidgetItem('—' if is_general else row['item_value']))
                 self.defaults_table.setItem(i, 2, QTableWidgetItem(row['target_cost_field']))
                 cost_item = QTableWidgetItem(f"{row['default_cost']:,.2f}")
                 cost_item.setTextAlignment(Qt.AlignCenter)
@@ -201,9 +251,9 @@ class DefaultsTab(QWidget):
             QMessageBox.warning(self, "خطا", f"بارگذاری قیمت‌های پایه با خطا مواجه شد:\n{err}")
 
     def reload(self):
-        """Refresh after external changes (e.g. export from the paper calc tab)."""
+        """Refresh after external changes (import, restore, ...)."""
         self.load_default_costs_table()
-        self.populate_default_value_combo(self.def_cat_combo.currentText())
+        self._on_category_changed()
 
     def _reset_default_form(self):
         self.def_cost_spin.setValue(0)
@@ -214,17 +264,22 @@ class DefaultsTab(QWidget):
         self._default_cancel_btn.setVisible(False)
 
     def add_default_cost_mapping(self):
-        cat = self.def_cat_combo.currentText()
-        val = self.def_value_combo.currentText().strip()
-        if not val:
-            QMessageBox.warning(self, "خطا", "مقدار نوع نمی‌تواند خالی باشد.")
-            return
+        cat = self._current_category()
+        field = self.def_cost_field_combo.currentText()
+        if cat == GENERAL_CATEGORY:
+            # keyed by the field itself so upserts stay unique per field
+            val = field
+        else:
+            val = self.def_value_combo.currentText().strip()
+            if not val:
+                QMessageBox.warning(self, "خطا", "مقدار نوع نمی‌تواند خالی باشد.")
+                return
         try:
-            self.db.insert_default_mapping(cat, val, self.def_cost_field_combo.currentText(),
-                                           self.def_cost_spin.value())
-            self.db.save_category(cat, val)
+            self.db.upsert_default_mapping(cat, val, field, self.def_cost_spin.value())
+            if cat != GENERAL_CATEGORY:
+                self.db.save_category(cat, val)
             self.load_default_costs_table()
-            self.populate_default_value_combo(cat)
+            self._on_category_changed()
             self._reset_default_form()
         except Exception as err:
             QMessageBox.critical(self, "خطا", f"افزودن قیمت پایه با خطا مواجه شد:\n{err}")
@@ -244,8 +299,22 @@ class DefaultsTab(QWidget):
         except ValueError:
             cost = 0.0
 
-        self.def_cat_combo.setCurrentText(cat)
-        self.def_value_combo.setCurrentText(val)
+        if cat == GENERAL_CATEGORY or cat == _GENERAL_LABEL:
+            self.def_cat_combo.setCurrentText(_GENERAL_LABEL)
+        elif cat in CATEGORY_TARGET_FIELDS:
+            self.def_cat_combo.setCurrentText(cat)
+            self.def_value_combo.setCurrentText(val)
+        else:
+            # Legacy row (paper/zinc type categories from older versions)
+            QMessageBox.information(
+                self, "ردیف قدیمی",
+                "این ردیف از نسخه‌های قبلی است و دیگر قابل ویرایش نیست.\n"
+                "قیمت کاغذها در «کتابخانه کاغذ» و قیمت زینک‌ها در جدول بالای همین صفحه "
+                "مدیریت می‌شود. در صورت عدم نیاز می‌توانید این ردیف را حذف کنید.")
+            return
+        self._on_category_changed()
+        if self.def_cost_field_combo.findText(field) == -1:
+            self.def_cost_field_combo.addItem(field)   # legacy pairing — keep editable
         self.def_cost_field_combo.setCurrentText(field)
         self.def_cost_spin.setValue(cost)
         self.editing_default_id = mapping_id
@@ -258,14 +327,14 @@ class DefaultsTab(QWidget):
         if self.editing_default_id is None:
             QMessageBox.warning(self, "خطا", "ابتدا یک ردیف را با دابل کلیک انتخاب کنید.")
             return
-        cat = self.def_cat_combo.currentText()
-        val = self.def_value_combo.currentText().strip()
+        cat = self._current_category()
+        field = self.def_cost_field_combo.currentText()
+        val = field if cat == GENERAL_CATEGORY else self.def_value_combo.currentText().strip()
         try:
             self.db.update_default_mapping(self.editing_default_id, cat, val,
-                                           self.def_cost_field_combo.currentText(),
-                                           self.def_cost_spin.value())
+                                           field, self.def_cost_spin.value())
             self.load_default_costs_table()
-            self.populate_default_value_combo(cat)
+            self._on_category_changed()
             self._reset_default_form()
         except Exception as err:
             QMessageBox.critical(self, "خطا", f"ویرایش با خطا مواجه شد:\n{err}")

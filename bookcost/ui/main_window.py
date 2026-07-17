@@ -153,8 +153,8 @@ class BookCostCalculator(QMainWindow):
 
         self.report_tab.generate_requested.connect(self.generate_pdf)
 
-        self.paper_calc_tab.defaults_exported.connect(self._on_defaults_exported)
-
+        self.defaults_tab.paper_library_requested.connect(
+            lambda: self.tabs.setCurrentWidget(self.paper_calc_tab))
         self.defaults_tab.zinc_prices_changed.connect(self._on_zinc_prices_changed)
         self.defaults_tab.cost_applied.connect(self.details_tab.set_cost_value)
 
@@ -165,10 +165,6 @@ class BookCostCalculator(QMainWindow):
     def _on_tab_changed(self, idx):
         if self.tabs.widget(idx) is self.details_tab:
             self.details_tab.refresh_zinc_price_labels()
-
-    def _on_defaults_exported(self):
-        self.defaults_tab.reload()
-        self.tabs.setCurrentWidget(self.defaults_tab)
 
     def _on_zinc_prices_changed(self):
         self.details_tab.refresh_zinc_price_labels()
@@ -326,13 +322,13 @@ class BookCostCalculator(QMainWindow):
         updated_count = 0
         try:
             items = self.details_tab.type_selections()
-            if items:
-                mappings = self.db.get_default_costs_batch(items)
-                for mapping in mappings:
-                    cost_field = mapping['target_cost_field']
-                    if cost_field in self.details_tab.cost_inputs:
-                        self.details_tab.set_cost_value(cost_field, mapping['default_cost'])
-                        updated_count += 1
+            mappings = list(self.db.get_default_costs_batch(items)) if items else []
+            mappings += list(self.db.get_general_defaults())
+            for mapping in mappings:
+                cost_field = mapping['target_cost_field']
+                if cost_field in self.details_tab.cost_inputs:
+                    self.details_tab.set_cost_value(cost_field, mapping['default_cost'])
+                    updated_count += 1
             paper_count = self.details_tab.autofill_paper_prices()
         except Exception as err:
             print("Error importing defaults:", err)

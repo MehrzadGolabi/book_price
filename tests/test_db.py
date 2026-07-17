@@ -220,3 +220,18 @@ def test_paper_dims_skips_manual_entries(db):
     db.insert_paper_calculation(_lib_entry('دستی', 5000))  # no dims
     assert db.get_latest_paper_price('دستی') == 5000.0
     assert db.get_paper_dims('دستی') is None
+
+
+def test_general_defaults(db):
+    db.upsert_default_mapping('عمومی', 'هزینه صحافی', 'هزینه صحافی', 2_500_000)
+    db.upsert_default_mapping('عمومی', 'هزینه ثبت شابک', 'هزینه ثبت شابک', 300_000)
+    db.upsert_default_mapping('نوع چاپ متن', 'افست', 'هزینه چاپ متن', 4_000_000)
+
+    rows = db.get_general_defaults()
+    assert len(rows) == 2
+    assert {r['target_cost_field'] for r in rows} == {'هزینه صحافی', 'هزینه ثبت شابک'}
+    # upsert replaces, not duplicates
+    db.upsert_default_mapping('عمومی', 'هزینه صحافی', 'هزینه صحافی', 3_000_000)
+    rows = db.get_general_defaults()
+    assert len(rows) == 2
+    assert {r['default_cost'] for r in rows} == {3_000_000, 300_000}
