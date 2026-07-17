@@ -60,6 +60,52 @@ class BookCostCalculator(QMainWindow):
         self._build_tabs()
         self._build_chrome()
         self._wire_signals()
+        self._mark_clean()
+
+    # ── Unsaved-changes tracking ───────────────────────────────────────────
+
+    def _state_fingerprint(self) -> str:
+        """Cheap snapshot of everything the user can edit for a project."""
+        try:
+            return repr((self.details_tab.collect_project(),
+                         self.details_tab.collect_details(),
+                         self.details_tab.papers(),
+                         self.pricing_tab.multiplier(),
+                         self.pricing_tab.distribution_pct()))
+        except Exception:
+            return ''
+
+    def _mark_clean(self):
+        self._clean_state = self._state_fingerprint()
+
+    def is_dirty(self) -> bool:
+        return self._state_fingerprint() != self._clean_state
+
+    def _confirm_discard(self) -> bool:
+        """True when it's safe to leave the current project (saved or the
+        user chose to discard)."""
+        if not self.is_dirty():
+            return True
+        box = QMessageBox(self)
+        box.setWindowTitle("تغییرات ذخیره‌نشده")
+        box.setText("تغییرات ذخیره‌نشده‌ای در پروژه جاری دارید.")
+        box.setInformativeText("می‌خواهید قبل از ادامه ذخیره شود؟")
+        save_btn = box.addButton("ذخیره", QMessageBox.AcceptRole)
+        box.addButton("ادامه بدون ذخیره", QMessageBox.DestructiveRole)
+        cancel_btn = box.addButton("انصراف", QMessageBox.RejectRole)
+        box.setDefaultButton(save_btn)
+        box.exec()
+        clicked = box.clickedButton()
+        if clicked is save_btn:
+            self.save_project_to_db()
+            return not self.is_dirty()   # save may have failed (e.g. no title)
+        return clicked is not cancel_btn
+
+    def closeEvent(self, event):
+        if self._confirm_discard():
+            event.accept()
+        else:
+            event.ignore()
 
     # ── Construction ───────────────────────────────────────────────────────
 
@@ -227,7 +273,8 @@ class BookCostCalculator(QMainWindow):
             now = jdatetime.datetime.now().strftime("%H:%M:%S")
             self.status_project_label.setText(title)
             self.status_save_label.setText(f"آخرین ذخیره: {now}")
-            QMessageBox.information(self, "موفقیت", "اطلاعات پروژه با موفقیت ذخیره شد!")
+            self.statusBar().showMessage(f"✓ پروژه «{title}» ذخیره شد", 4000)
+            self._mark_clean()
         except Exception as err:
             QMessageBox.critical(self, "خطای ذخیره‌سازی", f"مشکلی در ذخیره اطلاعات پیش آمد:\n{err}")
 
@@ -239,6 +286,8 @@ class BookCostCalculator(QMainWindow):
         self.load_project_by_id(selected[0])
 
     def load_project_by_id(self, project_id):
+        if not self._confirm_discard():
+            return
         try:
             project = self.db.get_project(project_id)
             if not project:
@@ -267,12 +316,14 @@ class BookCostCalculator(QMainWindow):
             self.status_save_label.setText("")
 
             self.tabs.setCurrentWidget(self.details_tab)
-            QMessageBox.information(self, "بارگذاری",
-                                    "پروژه با موفقیت بارگذاری شد. پس از ویرایش می‌توانید ذخیره کنید.")
+            self.statusBar().showMessage(f"پروژه «{project['title']}» بارگذاری شد", 4000)
+            self._mark_clean()
         except Exception as err:
             QMessageBox.critical(self, "خطا", f"بارگذاری پروژه با خطا مواجه شد:\n{err}")
 
-    def new_project(self):
+    def new_project(self, force: bool = False):
+        if not force and not self._confirm_discard():
+            return
         self.current_project_id = None
         self.status_project_label.setText("پروژه جدید")
         self.status_save_label.setText("")
@@ -282,6 +333,7 @@ class BookCostCalculator(QMainWindow):
         self.calc_tab.reset()
 
         self.tabs.setCurrentWidget(self.details_tab)
+        self._mark_clean()
 
     def delete_project(self):
         selected = self.projects_tab.selected_project()
@@ -311,7 +363,7 @@ class BookCostCalculator(QMainWindow):
             self.db.delete_project(project_id)
             self.projects_tab.refresh()
             if self.current_project_id == project_id:
-                self.new_project()
+                self.new_project(force=True)
             QMessageBox.information(self, "موفقیت", "پروژه با موفقیت حذف شد.")
         except Exception as err:
             QMessageBox.critical(self, "خطا", f"حذف پروژه با مشکل مواجه شد:\n{err}")
@@ -455,7 +507,7 @@ class BookCostCalculator(QMainWindow):
             return
 
         # Refresh everything that caches database content
-        self.new_project()
+        self.new_project(force=True)
         self.projects_tab.refresh()
         self.details_tab.reload_categories()
         self.details_tab.refresh_zinc_price_labels()

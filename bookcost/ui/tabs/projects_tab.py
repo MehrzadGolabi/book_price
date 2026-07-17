@@ -69,7 +69,7 @@ class ProjectsTab(QWidget):
                     series_txt = ""
                 series_item = QTableWidgetItem(series_txt)
                 if series_txt:
-                    series_item.setForeground(QColor('#64b5f6'))
+                    series_item.setForeground(QColor('#1d4ed8'))
                 self.project_table.setItem(row_idx, 0, QTableWidgetItem(str(row['id'])))
                 self.project_table.setItem(row_idx, 1, QTableWidgetItem(row['title']))
                 self.project_table.setItem(row_idx, 2, series_item)

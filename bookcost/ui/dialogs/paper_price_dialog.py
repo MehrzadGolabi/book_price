@@ -117,8 +117,8 @@ class PaperPriceDialog(QDialog):
         self.result_label = QLabel("قیمت واحد: 0.00 تومان")
         self.result_label.setAlignment(Qt.AlignCenter)
         self.result_label.setStyleSheet(
-            "background-color: #1a2a1a; border: 1px solid #2d5a27;"
-            "color: #4caf50; font-size: 16px; font-weight: bold;"
+            "background-color: #f0fdf4; border: 1px solid #bbf7d0;"
+            "color: #15803d; font-size: 16px; font-weight: bold;"
             "padding: 8px; border-radius: 4px;"
         )
         calc_vbox.addWidget(self.result_label)

@@ -62,7 +62,8 @@ class DetailsTab(QWidget):
         spin.lineEdit().setAlignment(Qt.AlignCenter)
         if readonly:
             spin.setReadOnly(True)
-            spin.setStyleSheet("background-color: #1e2d1e; color: #4caf50;")
+            spin.setProperty("autoField", True)   # green "computed" tint via QSS
+            spin.setToolTip("این مقدار به‌صورت خودکار محاسبه می‌شود.")
         layout.addWidget(label)
         layout.addWidget(spin)
         self.cost_inputs[field_name] = spin
@@ -138,7 +139,7 @@ class DetailsTab(QWidget):
             "به‌طور خودکار بین جلدها تقسیم می‌شود و «هزینه چاپ جلد» را برای کل سری وارد کنید."
         )
         series_hint.setWordWrap(True)
-        series_hint.setStyleSheet("color: #ffb74d; font-size: 12px;")
+        series_hint.setStyleSheet("color: #b45309; font-size: 12px;")
         series_layout.addRow("", series_hint)
         self.series_widget = series_widget
         self.series_widget.setVisible(False)
@@ -176,7 +177,7 @@ class DetailsTab(QWidget):
         # ── Orientation result label ──────────────────────────────────────
         self.orientation_label = QLabel("")
         self.orientation_label.setWordWrap(True)
-        self.orientation_label.setStyleSheet("color: #64b5f6;")
+        self.orientation_label.setStyleSheet("color: #1d4ed8;")
         form_layout.addRow("جهت بهینه:", self.orientation_label)
 
         # ── Dynamic type categories ───────────────────────────────────────
@@ -235,13 +236,13 @@ class DetailsTab(QWidget):
         self.cost_group_boxes["اداری و مجوزها"] = grp5
 
         self.royalty_input = QDoubleSpinBox()
-        self.royalty_input.setSuffix(" %")
+        self.royalty_input.setSuffix(" ٪")
         self.royalty_input.setMaximum(100.0)
         self.royalty_input.setDecimals(0)
         form_layout.addRow("حق تالیف درصدی:", self.royalty_input)
 
         self.tarjomeh_input = QDoubleSpinBox()
-        self.tarjomeh_input.setSuffix(" %")
+        self.tarjomeh_input.setSuffix(" ٪")
         self.tarjomeh_input.setMaximum(100.0)
         self.tarjomeh_input.setDecimals(0)
         self.tarjomeh_input.setToolTip(
@@ -359,7 +360,7 @@ class DetailsTab(QWidget):
         self.waste_percent_spin.setRange(0, 50)
         self.waste_percent_spin.setDecimals(1)
         self.waste_percent_spin.setValue(5.0)
-        self.waste_percent_spin.setSuffix(" %")
+        self.waste_percent_spin.setSuffix(" ٪")
         calc_layout.addRow("ضایعات کاغذ:", self.waste_percent_spin)
 
         self.calc_group.setLayout(calc_layout)
@@ -475,10 +476,10 @@ class DetailsTab(QWidget):
             price = self.db.get_zinc_price(combo.currentText())
             if price > 0:
                 label.setText(f"{price:,.0f} تومان")
-                label.setStyleSheet("color: #4caf50;")
+                label.setStyleSheet("color: #15803d;")
             else:
                 label.setText("⚠ قیمت تنظیم نشده")
-                label.setStyleSheet("color: #e57373;")
+                label.setStyleSheet("color: #b91c1c;")
 
     def auto_calculate_costs(self, *args):
         color_counts = {0: 1, 1: 2, 2: 4}

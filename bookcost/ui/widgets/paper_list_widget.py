@@ -42,12 +42,12 @@ class PaperListWidget(QWidget):
 
         self._warning = QLabel("")
         self._warning.setWordWrap(True)
-        self._warning.setStyleSheet("color: #ffb74d; font-size: 12px;")
+        self._warning.setStyleSheet("color: #b45309; font-size: 12px;")
         self._warning.setVisible(False)
         layout.addWidget(self._warning)
 
         add_btn = QPushButton("+ افزودن نوع کاغذ")
-        add_btn.setStyleSheet("padding: 3px 8px; color: #64b5f6; background: transparent; border: 1px dashed #64b5f6;")
+        add_btn.setStyleSheet("padding: 3px 8px; color: #1d4ed8; background: transparent; border: 1px dashed #1d4ed8;")
         add_btn.clicked.connect(self._add_row_interactive)
         row = QHBoxLayout()
         row.addWidget(add_btn)
@@ -99,7 +99,7 @@ class PaperListWidget(QWidget):
 
         remove_btn = QPushButton("✕")
         remove_btn.setFixedWidth(28)
-        remove_btn.setStyleSheet("color: #e57373; background: transparent;")
+        remove_btn.setStyleSheet("color: #b91c1c; background: transparent;")
 
         h.addWidget(type_combo, 3)
         h.addWidget(forms_spin, 2)

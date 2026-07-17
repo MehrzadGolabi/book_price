@@ -1,6 +1,14 @@
 /* ============================================================
-   Modern, High-Contrast Theme (Tailwind Slate/Blue inspired)
+   Modern, High-Contrast LIGHT Theme (Tailwind Slate/Blue inspired)
+   Semantic colors used across inline styles:
+     interactive/hint  #1d4ed8   success  #15803d   error  #b91c1c
+     warning           #b45309   muted    #475569
    ============================================================ */
+
+QWidget {
+    font-family: 'Tahoma', 'Segoe UI', sans-serif;
+    font-size: 14px;
+}
 
 QMainWindow {
     background-color: #f8fafc;
@@ -30,6 +38,12 @@ QToolBar QToolButton:hover {
 QToolBar QToolButton:pressed {
     background: #0f172a;
 }
+QToolBar QToolButton:focus {
+    background: #334155;
+    border: 2px solid #60a5fa;
+    border-radius: 6px;
+    padding: 4px 12px;
+}
 
 /* Tabs */
 QTabWidget::pane {
@@ -39,7 +53,7 @@ QTabWidget::pane {
 }
 QTabBar::tab {
     background: #f1f5f9;
-    padding: 10px 24px;
+    padding: 10px 13px;
     margin-right: 2px;
     border-top-left-radius: 6px;
     border-top-right-radius: 6px;
@@ -57,6 +71,14 @@ QTabBar::tab:selected {
 QTabBar::tab:hover:!selected {
     background: #e2e8f0;
     color: #1e293b;
+}
+QTabBar::tab:focus {
+    border: 2px solid #3b82f6;
+    border-bottom: 2px solid #2563eb;
+}
+QPushButton:focus {
+    border: 2px solid #93c5fd;
+    padding: 6px 14px;
 }
 
 /* Buttons */
@@ -119,6 +141,11 @@ QComboBox::drop-down {
 }
 QComboBox::drop-down:hover {
     background: #f1f5f9;
+}
+QComboBox::down-arrow {
+    image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><polyline points='2,4 6,8 10,4' fill='none' stroke='rgb(71,85,105)' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+    width: 12px;
+    height: 12px;
 }
 QComboBox QAbstractItemView {
     border: 1px solid #cbd5e1;
@@ -264,11 +291,29 @@ QGroupBox::title {
 }
 QWidget#scroll_content { background-color: #f8fafc; }
 
+/* Numeric fields don't need to span the window — keep value near label */
+QSpinBox, QDoubleSpinBox {
+    max-width: 220px;
+}
+
 /* Read-only auto-calculated fields */
 QDoubleSpinBox:read-only {
     background: #f1f5f9;
     color: #475569;
     border-color: #e2e8f0;
+}
+/* Auto-computed cost fields (کاغذ متن/جلد، زینک) — green "computed" tint */
+QDoubleSpinBox[autoField="true"] {
+    background: #f0fdf4;
+    color: #15803d;
+    border-color: #bbf7d0;
+}
+
+/* Totals cards on the calc tab */
+QFrame#total_card {
+    background: #ffffff;
+    border: 1px solid #cbd5e1;
+    border-radius: 10px;
 }
 
 /* Info and result labels */

@@ -6,7 +6,8 @@ from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
 from matplotlib.font_manager import FontProperties
 
-from PySide6.QtWidgets import QFormLayout, QLabel, QVBoxLayout, QWidget
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
 from bookcost.resources import resource_path
 
@@ -26,18 +27,34 @@ class CalcTab(QWidget):
 
         layout = QVBoxLayout(self)
 
-        prices_layout = QFormLayout()
-        self.lbl_final_total = QLabel("0")
-        self.lbl_single_price = QLabel("0")
-        self.lbl_final_total.setObjectName("lbl_final_total")
-        self.lbl_single_price.setObjectName("lbl_single_price")
-        prices_layout.addRow("قیمت تمام شده کل (تومان):", self.lbl_final_total)
-        prices_layout.addRow("قیمت تمام شده یک جلد کتاب (تومان):", self.lbl_single_price)
-        layout.addLayout(prices_layout)
+        def make_card(caption: str, value_object_name: str):
+            card = QFrame()
+            card.setObjectName("total_card")
+            card_layout = QVBoxLayout(card)
+            card_layout.setContentsMargins(20, 14, 20, 14)
+            cap = QLabel(caption)
+            cap.setStyleSheet("color: #475569; font-size: 13px;")
+            cap.setAlignment(Qt.AlignCenter)
+            value = QLabel("0")
+            value.setObjectName(value_object_name)
+            value.setAlignment(Qt.AlignCenter)
+            card_layout.addWidget(cap)
+            card_layout.addWidget(value)
+            return card, value
+
+        cards_row = QHBoxLayout()
+        cards_row.setSpacing(12)
+        total_card, self.lbl_final_total = make_card(
+            "قیمت تمام شده کل (تومان)", "lbl_final_total")
+        single_card, self.lbl_single_price = make_card(
+            "قیمت تمام شده یک جلد کتاب (تومان)", "lbl_single_price")
+        cards_row.addWidget(total_card, 1)
+        cards_row.addWidget(single_card, 1)
+        layout.addLayout(cards_row)
 
         self.figure = Figure(figsize=(6, 6))
         self.canvas = FigureCanvasQTAgg(self.figure)
-        layout.addWidget(self.canvas)
+        layout.addWidget(self.canvas, 1)
 
     @property
     def total_cost(self) -> float:

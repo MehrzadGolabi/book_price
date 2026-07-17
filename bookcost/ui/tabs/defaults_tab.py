@@ -60,9 +60,9 @@ class DefaultsTab(QWidget):
             "قیمت انواع کاغذ اینجا تعریف نمی‌شود — قیمت واحد هر کاغذ در «کتابخانه کاغذ» "
             "نگه‌داری و به‌طور خودکار در پروژه‌ها بارگذاری می‌شود. قیمت زینک‌ها نیز در جدول بالا است.")
         paper_hint.setWordWrap(True)
-        paper_hint.setStyleSheet("color: #64b5f6; font-size: 12px;")
+        paper_hint.setStyleSheet("color: #1d4ed8; font-size: 12px;")
         paper_lib_btn = QPushButton("کتابخانه کاغذ ←")
-        paper_lib_btn.setStyleSheet("padding: 4px 10px; color: #64b5f6; background: transparent; border: 1px solid #64b5f6;")
+        paper_lib_btn.setStyleSheet("padding: 4px 10px; color: #1d4ed8; background: transparent; border: 1px solid #1d4ed8;")
         paper_lib_btn.clicked.connect(self.paper_library_requested.emit)
         paper_hint_row.addWidget(paper_hint, 1)
         paper_hint_row.addWidget(paper_lib_btn)
@@ -121,18 +121,10 @@ class DefaultsTab(QWidget):
         self._default_cancel_btn.clicked.connect(self._reset_default_form)
         self._default_cancel_btn.setVisible(False)
 
-        delete_btn = QPushButton("حذف")
-        delete_btn.setStyleSheet(
-            "QPushButton { background-color: #c0392b; color: white; padding: 6px 16px; border-radius: 4px; }"
-            "QPushButton:hover { background-color: #a93226; }"
-        )
-        delete_btn.clicked.connect(self.delete_default_cost_mapping)
-
         btn_layout.addWidget(self._default_add_btn)
         btn_layout.addWidget(self._default_save_btn)
         btn_layout.addWidget(self._default_cancel_btn)
         btn_layout.addStretch()
-        btn_layout.addWidget(delete_btn)
 
         form_outer.addLayout(btn_layout)
         self.mapping_form_group.setLayout(form_outer)
@@ -150,10 +142,18 @@ class DefaultsTab(QWidget):
         self.defaults_table.doubleClicked.connect(self.load_selected_default_for_edit)
         table_layout.addWidget(self.defaults_table)
 
+        table_footer = QHBoxLayout()
         hint_label = QLabel("برای ویرایش، روی ردیف دابل‌کلیک کنید")
-        hint_label.setAlignment(Qt.AlignCenter)
-        hint_label.setStyleSheet("color: #64748b; font-size: 11px;")
-        table_layout.addWidget(hint_label)
+        hint_label.setStyleSheet("color: #475569; font-size: 12px;")
+        delete_btn = QPushButton("حذف ردیف انتخاب‌شده")
+        delete_btn.setStyleSheet(
+            "QPushButton { background-color: #c0392b; color: white; padding: 6px 16px; border-radius: 4px; }"
+            "QPushButton:hover { background-color: #a93226; }"
+        )
+        delete_btn.clicked.connect(self.delete_default_cost_mapping)
+        table_footer.addWidget(hint_label, 1)
+        table_footer.addWidget(delete_btn)
+        table_layout.addLayout(table_footer)
 
         table_group.setLayout(table_layout)
         layout.addWidget(table_group)

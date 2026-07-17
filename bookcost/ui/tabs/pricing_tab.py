@@ -52,8 +52,9 @@ class PricingTab(QWidget):
         self.lbl_cover_price = QLabel("—")
         self.lbl_cover_price.setAlignment(Qt.AlignCenter)
         self.lbl_cover_price.setStyleSheet(
-            "font-size: 20px; font-weight: bold; color: #4caf50;"
-            "background-color: #1a2a1a; padding: 10px; border-radius: 6px;"
+            "font-size: 20px; font-weight: bold; color: #15803d;"
+            "background-color: #f0fdf4; border: 1px solid #bbf7d0;"
+            "padding: 10px; border-radius: 6px;"
         )
         grp_a_form.addRow("قیمت پشت جلد پیشنهادی:", self.lbl_cover_price)
 
@@ -62,11 +63,12 @@ class PricingTab(QWidget):
         self.breakdown_layout.setContentsMargins(0, 0, 0, 0)
         self.breakdown_layout.setSpacing(2)
         self._breakdown_frames = {}
+        # Dark enough for 4.5:1 white-on-color contrast
         colors = {
-            "production":   "#2196f3",
-            "distribution": "#ff9800",
-            "royalty":      "#9c27b0",
-            "publisher":    "#4caf50",
+            "production":   "#1d4ed8",
+            "distribution": "#b45309",
+            "royalty":      "#7e22ce",
+            "publisher":    "#15803d",
         }
         for key, color in colors.items():
             frame = QLabel(_LABELS_FA[key])
@@ -85,7 +87,7 @@ class PricingTab(QWidget):
         self.distribution_spin.setSingleStep(1)
         self.distribution_spin.setDecimals(0)
         self.distribution_spin.setValue(35.0)
-        self.distribution_spin.setSuffix(" %")
+        self.distribution_spin.setSuffix(" ٪")
         grp_a_form.addRow("سهم کتابفروشی / توزیع:", self.distribution_spin)
 
         main_vbox.addWidget(grp_a)
@@ -181,18 +183,18 @@ class PricingTab(QWidget):
                     f"✓ تیراژ {tiraj:,} جلد از نقطه سر به سر ({break_even:,}) عبور کرده | "
                     f"سود ناخالص تخمینی فروش کامل: {profit:,.0f} تومان"
                 )
-                self.lbl_profit_status.setStyleSheet("color: #4caf50; font-weight: bold;")
+                self.lbl_profit_status.setStyleSheet("color: #15803d; font-weight: bold;")
             else:
                 shortage = break_even - tiraj
                 self.lbl_profit_status.setText(
                     f"✗ تیراژ {tiraj:,} جلد کمتر از نقطه سر به سر است | "
                     f"برای رسیدن به سر به سر {shortage:,} جلد بیشتر نیاز است"
                 )
-                self.lbl_profit_status.setStyleSheet("color: #e57373; font-weight: bold;")
+                self.lbl_profit_status.setStyleSheet("color: #b91c1c; font-weight: bold;")
         else:
             self.lbl_break_even.setText("قابل محاسبه نیست")
             self.lbl_profit_status.setText("درآمد خالص ناشر صفر یا منفی است")
-            self.lbl_profit_status.setStyleSheet("color: #e57373;")
+            self.lbl_profit_status.setStyleSheet("color: #b91c1c;")
 
         # Part C — scenario table
         fixed_multipliers = [2.5, 3.0, 3.5]
@@ -213,11 +215,11 @@ class PricingTab(QWidget):
                 item = QTableWidgetItem(f"{profit:+,.0f} تومان")
                 item.setTextAlignment(Qt.AlignCenter)
                 if profit > 0:
-                    item.setForeground(QColor('#4caf50'))
+                    item.setForeground(QColor('#15803d'))
                 elif profit < -0.10 * total_cost:
-                    item.setForeground(QColor('#e57373'))
+                    item.setForeground(QColor('#b91c1c'))
                 else:
-                    item.setForeground(QColor('#ffb74d'))
+                    item.setForeground(QColor('#b45309'))
                 if abs(mult - multiplier) < 0.01 and pct == 1.0:
-                    item.setBackground(QColor('#1a2a1a'))
+                    item.setBackground(QColor('#dbeafe'))
                 self.scenario_table.setItem(row_idx, col_idx, item)
