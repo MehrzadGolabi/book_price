@@ -173,6 +173,7 @@ class DetailsTab(QWidget):
         dims_layout.addWidget(self.book_height_spin)
         self.book_dims_row_widget = dims_widget
         form_layout.addRow("ابعاد کتاب:", self.book_dims_row_widget)
+        self._form_layout = form_layout   # for setRowVisible (hides label+field)
 
         # ── Orientation result label ──────────────────────────────────────
         self.orientation_label = QLabel("")
@@ -532,13 +533,13 @@ class DetailsTab(QWidget):
         )
 
         if layout is None or total_pages == 0:
-            self.book_dims_row_widget.setVisible(False)
-            self.orientation_label.setVisible(False)
+            self._form_layout.setRowVisible(self.book_dims_row_widget, False)
+            self._form_layout.setRowVisible(self.orientation_label, False)
             self.lbl_optimal_paper.setText("کاغذ بهینه: - | ورق مصرفی هر جلد: -")
             return
 
-        self.book_dims_row_widget.setVisible(layout['is_custom'])
-        self.orientation_label.setVisible(layout['is_custom'])
+        self._form_layout.setRowVisible(self.book_dims_row_widget, layout['is_custom'])
+        self._form_layout.setRowVisible(self.orientation_label, layout['is_custom'])
 
         self.paper_size_combo.setCurrentText(layout['paper_size'])
         if layout['zinc']:
@@ -725,7 +726,7 @@ class DetailsTab(QWidget):
         if self.series_chk.isChecked():
             specs.append(("تقسیم هزینه‌های جلد",
                           f"بین {self.series_volumes_spin.value()} جلد سری"))
-        if self.book_dims_row_widget.isVisible():
+        if self.book_dims_row_widget.isVisibleTo(self):
             specs.insert(1, ("ابعاد کتاب",
                              f"{self.book_width_spin.value():g}×{self.book_height_spin.value():g} cm"))
         if self.orientation_label.text():
@@ -765,8 +766,10 @@ class DetailsTab(QWidget):
             'unit_price_paper_jeld': self.unit_price_paper_jeld_spin.value(),
             'unit_price_zinc': 0,
             'waste_percent': self.waste_percent_spin.value(),
-            'book_width': self.book_width_spin.value() if self.book_dims_row_widget.isVisible() else None,
-            'book_height': self.book_height_spin.value() if self.book_dims_row_widget.isVisible() else None,
+            # isVisibleTo: true whenever the row is shown for this trim size,
+            # regardless of whether the details tab is the current tab
+            'book_width': self.book_width_spin.value() if self.book_dims_row_widget.isVisibleTo(self) else None,
+            'book_height': self.book_height_spin.value() if self.book_dims_row_widget.isVisibleTo(self) else None,
             'paper_size': self.paper_size_combo.currentText().replace('×', 'x'),
             'orientation': self.orientation_label.text() or None,
             'pages_per_sheet': self.form_matn_spin.value(),
