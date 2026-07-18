@@ -15,10 +15,13 @@ from PySide6.QtWidgets import (
 )
 
 from bookcost.core.calculator import CostCalculator
+from bookcost.core.cost_model import CALC_TYPE_ORDER, CALC_TYPE_LABELS, CalcType
 from bookcost.core.fields import (
-    AUTO_COST_FIELDS, COST_FIELD_COLUMNS, DYNAMIC_TYPE_CATEGORIES, TYPE_FIELD_COLUMNS,
+    AUTO_COST_FIELDS, COST_FIELD_COLUMNS, DYNAMIC_TYPE_CATEGORIES,
+    TYPE_FIELD_COLUMNS, default_calc_type,
 )
 from bookcost.ui.dialogs.paper_price_dialog import PaperPriceDialog
+from bookcost.ui.widgets.custom_cost_widget import CustomCostWidget
 from bookcost.ui.widgets.paper_list_widget import PaperListWidget
 from bookcost.ui.widgets.print_layout_widget import PrintLayoutWidget
 
@@ -40,6 +43,7 @@ class DetailsTab(QWidget):
         self.cost_inputs = {}
         self.cost_input_rows = {}
         self.cost_row_labels = {}
+        self.cost_calc_combos = {}   # field name → calc-type combo (item 6)
         self.cost_group_boxes = {}
         self._build_ui()
         self._connect_signals()
@@ -68,12 +72,23 @@ class DetailsTab(QWidget):
         spin.setGroupSeparatorShown(True)
         spin.setDecimals(0)
         spin.lineEdit().setAlignment(Qt.AlignCenter)
+        layout.addWidget(label)
+        layout.addWidget(spin)
         if readonly:
             spin.setReadOnly(True)
             spin.setProperty("autoField", True)   # green "computed" tint via QSS
-            spin.setToolTip("این مقدار به‌صورت خودکار محاسبه می‌شود.")
-        layout.addWidget(label)
-        layout.addWidget(spin)
+            spin.setToolTip("این مقدار به‌صورت خودکار محاسبه می‌شود (هزینه کل).")
+        else:
+            # Per-field calculation type (item 6)
+            calc_combo = QComboBox()
+            for ct in CALC_TYPE_ORDER:
+                calc_combo.addItem(CALC_TYPE_LABELS[ct], ct.value)
+            idx = calc_combo.findData(default_calc_type(field_name))
+            calc_combo.setCurrentIndex(max(0, idx))
+            calc_combo.setToolTip("نحوهٔ محاسبهٔ این هزینه در جمع کل.")
+            calc_combo.currentIndexChanged.connect(self._on_cost_line_changed)
+            self.cost_calc_combos[field_name] = calc_combo
+            layout.addWidget(calc_combo)
         self.cost_inputs[field_name] = spin
         self.cost_input_rows[field_name] = row
         return row
@@ -259,6 +274,16 @@ class DetailsTab(QWidget):
             grp5_layout.addWidget(self._make_cost_row(fname))
         form_layout.addRow(grp5)
         self.cost_group_boxes["اداری و مجوزها"] = grp5
+
+        # ── Custom cost lines + subfields (item 11) ───────────────────────
+        grp_custom = QGroupBox("⑥ هزینه‌های سفارشی و زیرمجموعه‌ها")
+        grp_custom_layout = QVBoxLayout(grp_custom)
+        self.custom_cost_widget = CustomCostWidget(
+            parent_options_provider=self._builtin_field_names)
+        self.custom_cost_widget.changed.connect(self._on_cost_line_changed)
+        grp_custom_layout.addWidget(self.custom_cost_widget)
+        form_layout.addRow(grp_custom)
+        self.cost_group_boxes["هزینه‌های سفارشی"] = grp_custom
 
         self.royalty_input = QDoubleSpinBox()
         self.royalty_input.setSuffix(" ٪")
@@ -557,6 +582,56 @@ class DetailsTab(QWidget):
     def series_volumes(self) -> int:
         return self.series_volumes_spin.value() if self.series_chk.isChecked() else 1
 
+    def _builtin_field_names(self) -> list:
+        """Built-in cost field names offered as parents for subfields."""
+        return [f for fields in CostCalculator.COST_GROUPS.values() for f in fields]
+
+    def _on_cost_line_changed(self, *args):
+        """A calc-type combo or custom line changed. The grand total is
+        recomputed when the calculate button is pressed; kept as a hook."""
+        pass
+
+    def total_forms(self) -> int:
+        """Total print forms across the project (text + cover). Multi-volume
+        sums per-volume forms; here (single project) it's the two spinboxes."""
+        return int(self.form_matn_spin.value() + self.form_jeld_spin.value())
+
+    def build_cost_lines(self) -> list:
+        """Every cost as a dict for the unified model + persistence:
+        {field_key, display_name, parent_key, amount, calc_type, is_custom}."""
+        lines = []
+        for fields in CostCalculator.COST_GROUPS.values():
+            for f in fields:
+                spin = self.cost_inputs.get(f)
+                if spin is None:
+                    continue
+                if f in AUTO_COST_FIELDS:
+                    calc = 'fixed'
+                else:
+                    combo = self.cost_calc_combos.get(f)
+                    calc = combo.currentData() if combo else default_calc_type(f)
+                lines.append({'field_key': f, 'display_name': f, 'parent_key': None,
+                              'amount': spin.value(), 'calc_type': calc, 'is_custom': 0})
+        for i, e in enumerate(self.custom_cost_widget.entries()):
+            lines.append({'field_key': f'custom_{i}', 'display_name': e['display_name'],
+                          'parent_key': e['parent_key'], 'amount': e['amount'],
+                          'calc_type': e['calc_type'] or 'fixed', 'is_custom': 1})
+        return lines
+
+    def populate_cost_lines(self, lines: list):
+        """Restore per-field calc types and custom rows from saved cost lines."""
+        customs = []
+        for l in lines:
+            if l.get('is_custom'):
+                customs.append(l)
+                continue
+            combo = self.cost_calc_combos.get(l.get('field_key'))
+            if combo:
+                idx = combo.findData(l.get('calc_type') or 'fixed')
+                if idx >= 0:
+                    combo.setCurrentIndex(idx)
+        self.custom_cost_widget.set_entries(customs)
+
     def papers(self) -> list:
         """All multi-paper entries tagged with their section for persistence."""
         out = []
@@ -714,7 +789,10 @@ class DetailsTab(QWidget):
                     spin.setValue(0.0)
 
         for group_name, group_box in self.cost_group_boxes.items():
-            group_fields = CostCalculator.COST_GROUPS[group_name]
+            group_fields = CostCalculator.COST_GROUPS.get(group_name)
+            if group_fields is None:
+                group_box.setVisible(True)   # custom group is always available
+                continue
             any_visible = (visible_fields is None) or any(
                 f in visible_fields for f in group_fields
             )
@@ -1034,6 +1112,10 @@ class DetailsTab(QWidget):
         self.cut_half_chk.setChecked(False)
         self.papers_matn_list.clear()
         self.papers_jeld_list.clear()
+        self.custom_cost_widget.clear()
+        for f, combo in self.cost_calc_combos.items():
+            idx = combo.findData(default_calc_type(f))
+            combo.setCurrentIndex(max(0, idx))
         self._on_papers_changed()
         self._update_paper_readouts()
 

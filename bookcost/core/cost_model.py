@@ -97,6 +97,16 @@ def resolve_total(lines, ctx: CostContext) -> float:
     return sum(line.resolve(ctx) for line in lines)
 
 
+def project_total(lines, ctx: CostContext, royalty_pct: float = 0.0,
+                  tarjomeh_pct: float = 0.0) -> dict:
+    """Grand total with royalty + translation percentages applied on top of the
+    resolved base, plus per-copy cost. Returns {base, total_cost, cost_per_book}."""
+    base = resolve_total(lines, ctx)
+    final = base * (1.0 + (royalty_pct or 0) / 100.0 + (tarjomeh_pct or 0) / 100.0)
+    per = final / ctx.tiraj if ctx.tiraj > 0 else 0.0
+    return {'base': base, 'total_cost': final, 'cost_per_book': per}
+
+
 def resolved_breakdown(lines, ctx: CostContext) -> dict:
     """{display_name: resolved_total} for charting/reporting, top-level lines
     and sub-lines rolled into their own entries."""

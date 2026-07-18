@@ -27,15 +27,23 @@ class CostCalculator:
             "هزینه روکش سلفون", "هزینه مقوای مغذی",
         ],
         "تکمیل و صحافی": [
-            "هزینه قالب لترپرس", "هزینه قالب دايكات", "هزینه خط تا",
+            "هزینه قالب لترپرس", "هزینه خدمات لترپرس",
+            "هزینه قالب دايكات", "هزینه خدمات دايكات", "هزینه خط تا",
             "هزینه ملزومات", "هزینه جلدسازی", "هزینه صحافی",
             "هزینه برش و بسته‌بندی", "هزینه حمل و نقل", "هزینه مونتاژ",
             "هزینه طلاکوبی", "هزینه UV موضعی", "هزینه برجسته‌کاری",
+            "هزینه فیلم", "هزینه کلیشه",
         ],
         "اداری و مجوزها": [
             "هزینه مجوز ارشاد", "هزینه ثبت شابک",
         ],
     }
+
+    # New fields (item 10) added to every curated preset so they're reachable
+    # without switching to سفارشی; they default to 0 anyway.
+    _NEW_FIELDS_V4 = [
+        "هزینه خدمات لترپرس", "هزینه خدمات دايكات", "هزینه فیلم", "هزینه کلیشه",
+    ]
 
     # None means show all fields
     BOOK_TYPE_PRESETS = {
@@ -90,6 +98,12 @@ class CostCalculator:
         ],
         "سفارشی": None,
     }
+    for _preset, _fields in BOOK_TYPE_PRESETS.items():
+        if _fields is not None:
+            for _f in _NEW_FIELDS_V4:
+                if _f not in _fields:
+                    _fields.append(_f)
+    del _preset, _fields, _f
 
     ZINC_DIMS = {
         "زینک GTO":      (35, 50),

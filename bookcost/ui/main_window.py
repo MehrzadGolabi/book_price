@@ -21,6 +21,9 @@ import shutil
 
 from bookcost.config import DB_CONFIG
 from bookcost.core.calculator import CostCalculator
+from bookcost.core.cost_model import (
+    CalcType, CostContext, CostLine, project_total, resolved_breakdown,
+)
 from bookcost.core.db import BookDatabase, is_valid_database_file
 from bookcost.core.project_io import FILE_EXTENSION, load_project_file, save_project_file
 from bookcost.reporting.pdf_report import ReportData, build_pdf_report
@@ -70,6 +73,7 @@ class BookCostCalculator(QMainWindow):
             return repr((self.details_tab.collect_project(),
                          self.details_tab.collect_details(),
                          self.details_tab.papers(),
+                         self.details_tab.build_cost_lines(),
                          self.pricing_tab.multiplier(),
                          self.pricing_tab.distribution_pct()))
         except Exception:
@@ -224,21 +228,30 @@ class BookCostCalculator(QMainWindow):
             QMessageBox.warning(self, "خطا", "تیراژ نمی‌تواند صفر باشد!")
             return
 
-        cost_values = self.details_tab.cost_values()
-        totals = self.calculator.compute_totals(
-            cost_values,
-            royalty_pct=self.details_tab.royalty_pct(),
-            tiraj=tiraj,
-            tarjomeh_pct=self.details_tab.tarjomeh_pct(),
-            series_volumes=self.details_tab.series_volumes(),
-        )
+        totals, breakdown = self._compute_project_totals()
 
         self.details_tab.save_new_dynamic_types()
         self.calc_tab.set_totals(totals['total_cost'], totals['cost_per_book'])
-        self.calc_tab.update_chart(totals['adjusted_costs'])
+        self.calc_tab.update_chart(breakdown)
         self.refresh_pricing_tab()
         self.tabs.setCurrentWidget(self.calc_tab)
         self.save_project_to_db()
+
+    def _compute_project_totals(self):
+        """Resolve the unified cost lines into (totals dict, breakdown dict)."""
+        dt = self.details_tab
+        ctx = CostContext(tiraj=dt.tiraj(), total_forms=dt.total_forms(),
+                          volume_count=dt.series_volumes())
+        lines = [
+            CostLine(key=d['field_key'], display_name=d['display_name'],
+                     amount=d['amount'], calc_type=CalcType.coerce(d['calc_type']),
+                     parent_key=d['parent_key'], is_custom=bool(d['is_custom']))
+            for d in dt.build_cost_lines()
+        ]
+        totals = project_total(lines, ctx, royalty_pct=dt.royalty_pct(),
+                               tarjomeh_pct=dt.tarjomeh_pct())
+        breakdown = {k: v for k, v in resolved_breakdown(lines, ctx).items() if v > 0}
+        return totals, breakdown
 
     def refresh_pricing_tab(self):
         self.pricing_tab.refresh(
@@ -268,6 +281,8 @@ class BookCostCalculator(QMainWindow):
             else:
                 self.current_project_id = self.db.insert_project(p, d)
             self.db.replace_project_papers(self.current_project_id, self.details_tab.papers())
+            self.db.replace_project_cost_lines(
+                self.current_project_id, self.details_tab.build_cost_lines())
 
             self.projects_tab.refresh()
             now = jdatetime.datetime.now().strftime("%H:%M:%S")
@@ -295,8 +310,10 @@ class BookCostCalculator(QMainWindow):
                 return
             details = self.db.get_project_details(project_id)
             papers = self.db.get_project_papers(project_id)
+            cost_lines = self.db.get_project_cost_lines(project_id)
 
             self.details_tab.populate(project, details, papers)
+            self.details_tab.populate_cost_lines(cost_lines)
             if details:
                 details = dict(details)
                 self.pricing_tab.set_values(

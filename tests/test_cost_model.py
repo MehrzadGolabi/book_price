@@ -70,3 +70,17 @@ def test_default_calc_types_match_spec():
         assert default_calc_type(name) == 'per_tiraj'
     assert default_calc_type('هزینه تالیف') == 'fixed'
     assert default_calc_type('هزینه مجوز ارشاد') == 'fixed'
+
+
+def test_project_total_applies_percentages():
+    from bookcost.core.cost_model import project_total
+    lines = [
+        CostLine('a', 'تالیف', 1_000_000, CalcType.FIXED),
+        CostLine('b', 'صحافی', 2_000, CalcType.PER_TIRAJ),
+    ]
+    ctx = _ctx(tiraj=1000, total_forms=0)
+    r = project_total(lines, ctx, royalty_pct=10.0, tarjomeh_pct=5.0)
+    # base = 1,000,000 + 2,000,000 = 3,000,000 ; ×1.15 = 3,450,000
+    assert r['base'] == 3_000_000
+    assert abs(r['total_cost'] - 3_450_000) < 0.01
+    assert abs(r['cost_per_book'] - 3450.0) < 0.01

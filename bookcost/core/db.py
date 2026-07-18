@@ -152,6 +152,10 @@ _MIGRATION_COLS = [
     ("distribution_percent", "REAL DEFAULT 35.0"),
     ("tarjomeh_percent", "REAL DEFAULT 0"),
     ("paper_cut_half", "INTEGER DEFAULT 0"),
+    ("hazineh_khadamat_letterpress", "REAL DEFAULT 0"),
+    ("hazineh_khadamat_diecut", "REAL DEFAULT 0"),
+    ("hazineh_film", "REAL DEFAULT 0"),
+    ("hazineh_kelishe", "REAL DEFAULT 0"),
 ]
 
 # Additive migrations for the projects table (same try/except ALTER pattern)
@@ -191,6 +195,8 @@ DETAIL_COLUMNS = [
     'hazineh_boresh_bastebandi', 'hazineh_haml_naghl', 'hazineh_montaj',
     'hazineh_horoofchini', 'hazineh_mojawwez_ershad', 'hazineh_shabok',
     'hazineh_talakoobi', 'hazineh_uv_mowzei', 'hazineh_barjasteh',
+    'hazineh_khadamat_letterpress', 'hazineh_khadamat_diecut',
+    'hazineh_film', 'hazineh_kelishe',
     'book_type_preset', 'pricing_multiplier', 'distribution_percent',
     'tarjomeh_percent', 'paper_cut_half',
 ]
