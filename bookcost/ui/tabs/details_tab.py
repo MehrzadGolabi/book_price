@@ -322,6 +322,7 @@ class DetailsTab(QWidget):
     def _build_precalc_group(self) -> QGroupBox:
         self.calc_group = QGroupBox("② پیش از چاپ — محاسبات هوشمند کاغذ و زینک")
         calc_layout = QFormLayout()
+        self._precalc_layout = calc_layout
 
         # Text block (matn) setup
         self.form_matn_spin = QSpinBox()
@@ -363,6 +364,7 @@ class DetailsTab(QWidget):
         btn_calc_matn.setStyleSheet("background-color: #2a6496; color: white; padding: 4px 10px;")
         btn_calc_matn.clicked.connect(lambda: self.open_paper_price_dialog("matn"))
         matn_price_layout.addWidget(btn_calc_matn)
+        self._matn_price_row = matn_price_row
         calc_layout.addRow("قیمت واحد هر ورق کاغذ متن:", matn_price_row)
 
         self.papers_matn_list = PaperListWidget(
@@ -414,6 +416,7 @@ class DetailsTab(QWidget):
         btn_calc_jeld.setStyleSheet("background-color: #2a6496; color: white; padding: 4px 10px;")
         btn_calc_jeld.clicked.connect(lambda: self.open_paper_price_dialog("jeld"))
         jeld_price_layout.addWidget(btn_calc_jeld)
+        self._jeld_price_row = jeld_price_row
         calc_layout.addRow("قیمت واحد هر ورق کاغذ جلد:", jeld_price_row)
 
         self.papers_jeld_list = PaperListWidget(
@@ -502,8 +505,25 @@ class DetailsTab(QWidget):
         return (self.papers_matn_list.autofill_prices()
                 + self.papers_jeld_list.autofill_prices())
 
+    def _set_aggregate_readonly(self, ro: bool):
+        """In multi-volume mode the page/form totals are derived from the
+        volume rows, so lock the aggregate spinboxes and hide the per-book
+        optimal-paper hint (the per-volume rows drive it)."""
+        for spin in (self.total_pages_spin, self.form_matn_spin, self.form_jeld_spin):
+            spin.setReadOnly(ro)
+            spin.setProperty("autoField", ro)
+            spin.style().unpolish(spin)
+            spin.style().polish(spin)
+        tip = "در حالت چند جلدی از مجموع جلدها محاسبه می‌شود."
+        self.total_pages_spin.setToolTip(tip if ro else "")
+        self.form_matn_spin.setToolTip(
+            tip if ro else "به‌صورت خودکار پیشنهاد می‌شود اما همیشه قابل ویرایش است.")
+        self.form_jeld_spin.setToolTip(tip if ro else "همیشه قابل ویرایش است (بازنویسی دستی مجاز).")
+        self._form_layout.setRowVisible(self.lbl_optimal_paper, not ro)
+
     def _on_series_toggled(self, checked: bool):
         self.series_widget.setVisible(checked)
+        self._set_aggregate_readonly(checked)
         label = self.cost_row_labels.get('هزینه چاپ جلد')
         if label:
             label.setText("هزینه چاپ جلد (کل سری):" if checked else "هزینه چاپ جلد:")
@@ -544,12 +564,11 @@ class DetailsTab(QWidget):
         so the displayed value is right, yet the user can override afterward."""
         matn_multi = bool(self.papers_matn_list.entries())
         jeld_multi = bool(self.papers_jeld_list.entries())
-        self.unit_price_paper_matn_spin.setEnabled(not matn_multi)
-        self.unit_price_paper_matn_spin.setToolTip(
-            "چند نوع کاغذ متن فعال است؛ قیمت‌ها از لیست خوانده می‌شود." if matn_multi else "")
-        self.unit_price_paper_jeld_spin.setEnabled(not jeld_multi)
-        self.unit_price_paper_jeld_spin.setToolTip(
-            "چند نوع کاغذ جلد فعال است؛ قیمت‌ها از لیست خوانده می‌شود." if jeld_multi else "")
+        # When a section uses the multi-paper list, the single unit-price row is
+        # redundant — hide it (label + field + محاسبه) instead of leaving a
+        # greyed dead control.
+        self._precalc_layout.setRowVisible(self._matn_price_row, not matn_multi)
+        self._precalc_layout.setRowVisible(self._jeld_price_row, not jeld_multi)
 
         # Sync form spinboxes to the multi-paper totals (still editable)
         if matn_multi:
@@ -1052,6 +1071,7 @@ class DetailsTab(QWidget):
         self.series_chk.setChecked(is_series)
         self.series_chk.blockSignals(False)
         self.series_widget.setVisible(is_series)
+        self._set_aggregate_readonly(is_series)
         if is_series:
             self.series_name_input.setText(project.get('series_name') or '')
             self.volumes_widget.blockSignals(True)
@@ -1159,6 +1179,7 @@ class DetailsTab(QWidget):
         self.tarjomeh_input.setValue(0.0)
         self.series_chk.setChecked(False)
         self.series_widget.setVisible(False)
+        self._set_aggregate_readonly(False)
         self.series_name_input.clear()
         self.volumes_widget.clear()
         self.cut_half_chk.setChecked(False)
