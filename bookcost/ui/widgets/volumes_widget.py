@@ -11,6 +11,8 @@ from PySide6.QtWidgets import (
     QHBoxLayout, QLabel, QLineEdit, QPushButton, QSpinBox, QVBoxLayout, QWidget,
 )
 
+from bookcost.ui.widgets.paper_list_widget import _REMOVE_BTN_QSS
+
 
 class VolumesWidget(QWidget):
     changed = Signal()
@@ -30,7 +32,8 @@ class VolumesWidget(QWidget):
         for text, stretch in (("نام جلد", 3), ("صفحات", 2), ("فرم متن", 2),
                               ("فرم جلد", 2), ("", 0)):
             lbl = QLabel(text)
-            lbl.setStyleSheet("color:#475569; font-size:12px;")
+            lbl.setAlignment(Qt.AlignCenter)
+            lbl.setStyleSheet("color:#1e293b; font-size:13px; font-weight:600;")
             header.addWidget(lbl, stretch)
         layout.addLayout(header)
 
@@ -73,8 +76,9 @@ class VolumesWidget(QWidget):
         fj_spin.setAlignment(Qt.AlignCenter)
 
         remove_btn = QPushButton("✕")
-        remove_btn.setFixedWidth(28)
-        remove_btn.setStyleSheet("color: #b91c1c; background: transparent;")
+        remove_btn.setFixedWidth(30)
+        remove_btn.setToolTip("حذف این جلد")
+        remove_btn.setStyleSheet(_REMOVE_BTN_QSS)
 
         h.addWidget(name_edit, 3)
         h.addWidget(pages_spin, 2)

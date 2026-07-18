@@ -15,7 +15,9 @@ from PySide6.QtWidgets import (
 )
 
 from bookcost.core.calculator import CostCalculator
-from bookcost.core.cost_model import CALC_TYPE_ORDER, CALC_TYPE_LABELS, CalcType
+from bookcost.core.cost_model import (
+    CALC_TYPE_ORDER, CALC_TYPE_LABELS, CalcType, CostContext, CostLine, resolve_total,
+)
 from bookcost.core.fields import (
     AUTO_COST_FIELDS, COST_FIELD_COLUMNS, DYNAMIC_TYPE_CATEGORIES,
     TYPE_FIELD_COLUMNS, default_calc_type,
@@ -53,6 +55,7 @@ class DetailsTab(QWidget):
         self.suggest_optimal_layout()
         self._refresh_layout_widget()
         self._update_paper_readouts()
+        self._update_running_subtotal()
         # Apply default preset without zeroing (fields are already zero)
         self._apply_preset("شومیز ساده", zero_hidden=False)
 
@@ -80,6 +83,7 @@ class DetailsTab(QWidget):
             spin.setProperty("autoField", True)   # green "computed" tint via QSS
             spin.setToolTip("این مقدار به‌صورت خودکار محاسبه می‌شود (هزینه کل).")
         else:
+            spin.valueChanged.connect(self._on_cost_line_changed)
             # Per-field calculation type (item 6)
             calc_combo = QComboBox()
             for ct in CALC_TYPE_ORDER:
@@ -309,6 +313,20 @@ class DetailsTab(QWidget):
         scroll_layout.addWidget(calc_btn)
         scroll_area.setWidget(scroll_content)
 
+        # Sticky running subtotal — always visible below the scrolling form
+        self.lbl_running_total = QLabel("جمع هزینه‌ها: ۰ تومان")
+        self.lbl_running_total.setLayoutDirection(Qt.RightToLeft)
+        self.lbl_running_total.setAlignment(Qt.AlignCenter)
+        self.lbl_running_total.setStyleSheet(
+            "background-color: #1e293b; color: #ffffff; font-weight: bold;"
+            "font-size: 15px; padding: 10px; border-top: 2px solid #2563eb;")
+
+        left_col = QVBoxLayout()
+        left_col.setContentsMargins(0, 0, 0, 0)
+        left_col.setSpacing(0)
+        left_col.addWidget(scroll_area)
+        left_col.addWidget(self.lbl_running_total)
+
         self.layout_widget = PrintLayoutWidget()
         self.layout_widget.setFixedWidth(320)
 
@@ -316,7 +334,7 @@ class DetailsTab(QWidget):
         outer_layout.setContentsMargins(0, 0, 0, 0)
         outer_layout.setSpacing(0)
         self.setLayoutDirection(Qt.LeftToRight)
-        outer_layout.addWidget(scroll_area)
+        outer_layout.addLayout(left_col)
         outer_layout.addWidget(self.layout_widget)
 
     def _build_precalc_group(self) -> QGroupBox:
@@ -645,9 +663,22 @@ class DetailsTab(QWidget):
         return [f for fields in CostCalculator.COST_GROUPS.values() for f in fields]
 
     def _on_cost_line_changed(self, *args):
-        """A calc-type combo or custom line changed. The grand total is
-        recomputed when the calculate button is pressed; kept as a hook."""
-        pass
+        """A cost amount, calc-type combo, or custom line changed — refresh the
+        live running subtotal. The final total (with percentages) is still
+        computed on the calculate button."""
+        self._update_running_subtotal()
+
+    def _update_running_subtotal(self):
+        ctx = CostContext(tiraj=self.tiraj(), total_forms=self.total_forms(),
+                          volume_count=self.series_volumes())
+        lines = [
+            CostLine(key=d['field_key'], display_name=d['display_name'],
+                     amount=d['amount'], calc_type=CalcType.coerce(d['calc_type']),
+                     parent_key=d['parent_key'], is_custom=bool(d['is_custom']))
+            for d in self.build_cost_lines()
+        ]
+        base = resolve_total(lines, ctx)
+        self.lbl_running_total.setText(f"جمع هزینه‌ها (پیش از درصدها): {base:,.0f} تومان")
 
     def total_forms(self) -> int:
         """Total print forms across the project (text + cover) — summed across
@@ -749,6 +780,7 @@ class DetailsTab(QWidget):
         for field, value in results.items():
             self.cost_inputs[field].setValue(value)
         self._update_paper_readouts()
+        self._update_running_subtotal()
 
     def open_paper_price_dialog(self, target):
         dlg = PaperPriceDialog(self.db, target, parent=self)
@@ -1142,6 +1174,7 @@ class DetailsTab(QWidget):
         self.book_type_combo.setCurrentText(preset)
         self.book_type_combo.blockSignals(False)
         self._apply_preset(preset, zero_hidden=False)
+        self._update_running_subtotal()
 
     def reset(self):
         """Clears the form for a new project."""

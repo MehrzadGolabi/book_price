@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
 )
 
 from bookcost.core.cost_model import CALC_TYPE_ORDER, CALC_TYPE_LABELS, CalcType
+from bookcost.ui.widgets.paper_list_widget import _REMOVE_BTN_QSS
 
 _NO_PARENT = "— (هزینه مستقل)"
 
@@ -76,8 +77,9 @@ class CustomCostWidget(QWidget):
         calc_combo.setCurrentIndex(max(0, idx))
 
         remove_btn = QPushButton("✕")
-        remove_btn.setFixedWidth(28)
-        remove_btn.setStyleSheet("color: #b91c1c; background: transparent;")
+        remove_btn.setFixedWidth(30)
+        remove_btn.setToolTip("حذف این هزینه")
+        remove_btn.setStyleSheet(_REMOVE_BTN_QSS)
 
         h.addWidget(name_edit, 3)
         h.addWidget(QLabel("زیرمجموعهٔ:"))

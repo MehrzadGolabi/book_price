@@ -18,6 +18,14 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
+# Shared red "remove row" button style used by the editable list widgets.
+_REMOVE_BTN_QSS = (
+    "QPushButton { background-color: #dc2626; color: white; border: none;"
+    " border-radius: 4px; font-weight: bold; }"
+    "QPushButton:hover { background-color: #b91c1c; }"
+    "QPushButton:pressed { background-color: #991b1b; }"
+)
+
 
 class PaperListWidget(QWidget):
     changed = Signal()
@@ -98,8 +106,9 @@ class PaperListWidget(QWidget):
         price_spin.setAlignment(Qt.AlignCenter)
 
         remove_btn = QPushButton("✕")
-        remove_btn.setFixedWidth(28)
-        remove_btn.setStyleSheet("color: #b91c1c; background: transparent;")
+        remove_btn.setFixedWidth(30)
+        remove_btn.setToolTip("حذف این ردیف")
+        remove_btn.setStyleSheet(_REMOVE_BTN_QSS)
 
         h.addWidget(type_combo, 3)
         h.addWidget(forms_spin, 2)
