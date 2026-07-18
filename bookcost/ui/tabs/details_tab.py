@@ -578,17 +578,16 @@ class DetailsTab(QWidget):
 
         tiraj = self.inputs['تیراژ'].value()
         waste = self.waste_percent_spin.value()
-        papers_matn = self.papers_matn_list.entries()
-        papers_jeld = self.papers_jeld_list.entries()
-        form_matn = (sum(e['form_count'] for e in papers_matn)
-                     if papers_matn else self.form_matn_spin.value())
-        form_jeld = (sum(e['form_count'] for e in papers_jeld)
-                     if papers_jeld else self.form_jeld_spin.value())
+        # Total bought sheets depends on the TOTAL print forms (which track the
+        # page count and volumes), not on how the paper types split them. The
+        # form spinboxes already hold the project-wide totals — in multi-volume
+        # mode they're the sum across volumes, so no extra ×volumes factor.
+        form_matn = self.form_matn_spin.value()
+        form_jeld = self.form_jeld_spin.value()
         sides_matn = 2 if self.double_sided_matn_chk.isChecked() else 1
         sides_jeld = 2 if self.double_sided_jeld_chk.isChecked() else 1
-        vols = self.series_volumes()
 
-        bought_matn = self.calculator.bought_paper_count(form_matn, sides_matn, tiraj, waste, cut) * vols
+        bought_matn = self.calculator.bought_paper_count(form_matn, sides_matn, tiraj, waste, cut)
         bought_jeld = self.calculator.bought_paper_count(form_jeld, sides_jeld, tiraj, waste, cut)
         total = bought_matn + bought_jeld
         if tiraj <= 0 or (form_matn <= 0 and form_jeld <= 0):
