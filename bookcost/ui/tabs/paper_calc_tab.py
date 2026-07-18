@@ -3,7 +3,7 @@ keep a saved library of calculations (paper_calculations table)."""
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QComboBox, QDoubleSpinBox, QFormLayout,
+    QComboBox, QDoubleSpinBox, QFormLayout, QGroupBox,
     QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMessageBox, QPushButton,
     QSpinBox, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
@@ -16,13 +16,117 @@ class PaperCalcTab(QWidget):
         self.db = db
         self.calculator = calculator
         self.editing_paper_calc_id = None
+        self._all_calcs = []
         self._build_ui()
         self.update_paper_inputs_visibility()
         self.load_paper_calculations()
 
+    # ── Quick-select cascade (item 7) ──────────────────────────────────────
+
+    @staticmethod
+    def _size_str(row) -> str:
+        h, l = row['height'] or 0, row['length'] or 0
+        return f"{h:g}×{l:g}" if (h or l) else "—"
+
+    @staticmethod
+    def _gramaj_str(row) -> str:
+        return f"{int(row['weight'] or 0)}"
+
+    @staticmethod
+    def _bundle_str(row) -> str:
+        return f"{int(row['bundle_count'] or 0)}"
+
+    def _build_quick_select(self) -> QGroupBox:
+        grp = QGroupBox("انتخاب سریع از کتابخانه (بر اساس محاسبات ذخیره‌شده)")
+        gl = QFormLayout(grp)
+        self.q_type = QComboBox()
+        self.q_size = QComboBox()
+        self.q_gramaj = QComboBox()
+        self.q_bundle = QComboBox()
+        self._q_combos = [self.q_type, self.q_size, self.q_gramaj, self.q_bundle]
+        gl.addRow("نوع کاغذ:", self.q_type)
+        gl.addRow("اندازه (ارتفاع×طول):", self.q_size)
+        gl.addRow("گراماژ:", self.q_gramaj)
+        gl.addRow("تعداد بند:", self.q_bundle)
+        self.q_hint = QLabel("یک ترکیب را انتخاب کنید تا قیمت واحد آن بارگذاری شود.")
+        self.q_hint.setStyleSheet("color:#475569;")
+        gl.addRow("", self.q_hint)
+        use_btn = QPushButton("بارگذاری در فرم و محاسبه")
+        use_btn.clicked.connect(self._apply_quick_select)
+        gl.addRow("", use_btn)
+        self.q_type.currentIndexChanged.connect(lambda: self._refresh_cascade(1))
+        self.q_size.currentIndexChanged.connect(lambda: self._refresh_cascade(2))
+        self.q_gramaj.currentIndexChanged.connect(lambda: self._refresh_cascade(3))
+        self.q_bundle.currentIndexChanged.connect(self._update_quick_hint)
+        return grp
+
+    def _q_val(self, combo) -> str | None:
+        return combo.currentData()   # None means "any"
+
+    def _rows_matching(self, upto: int) -> list:
+        """Saved rows matching the first `upto` cascade selections (any = None)."""
+        sel = [self._q_val(c) for c in self._q_combos]
+        keyfns = [lambda r: r['paper_type'], self._size_str, self._gramaj_str, self._bundle_str]
+        out = []
+        for r in self._all_calcs:
+            if all(sel[i] is None or keyfns[i](r) == sel[i] for i in range(upto)):
+                out.append(r)
+        return out
+
+    def _fill_combo(self, combo, values):
+        prev = combo.currentData()
+        combo.blockSignals(True)
+        combo.clear()
+        combo.addItem("— همه —", None)
+        for v in values:
+            combo.addItem(v, v)
+        idx = combo.findData(prev)
+        combo.setCurrentIndex(idx if idx >= 0 else 0)
+        combo.blockSignals(False)
+
+    def _refresh_quick_options(self):
+        """Rebuild the whole cascade from the saved-calc list."""
+        types = sorted({r['paper_type'] for r in self._all_calcs if r['paper_type']})
+        self._fill_combo(self.q_type, types)
+        self._refresh_cascade(1)
+
+    def _refresh_cascade(self, level: int):
+        if level <= 1:
+            sizes = sorted({self._size_str(r) for r in self._rows_matching(1)})
+            self._fill_combo(self.q_size, sizes)
+        if level <= 2:
+            gramaj = sorted({self._gramaj_str(r) for r in self._rows_matching(2)},
+                            key=lambda s: int(s))
+            self._fill_combo(self.q_gramaj, gramaj)
+        if level <= 3:
+            bundles = sorted({self._bundle_str(r) for r in self._rows_matching(3)},
+                             key=lambda s: int(s))
+            self._fill_combo(self.q_bundle, bundles)
+        self._update_quick_hint()
+
+    def _update_quick_hint(self):
+        rows = self._rows_matching(4)
+        if not self._all_calcs:
+            self.q_hint.setText("کتابخانه خالی است — ابتدا یک محاسبه ذخیره کنید.")
+        elif rows:
+            self.q_hint.setText(
+                f"{len(rows)} مورد منطبق — قیمت واحد: {rows[0]['unit_price']:,.0f} تومان")
+        else:
+            self.q_hint.setText("موردی با این ترکیب یافت نشد.")
+
+    def _apply_quick_select(self):
+        rows = self._rows_matching(4)
+        if not rows:
+            QMessageBox.information(self, "اطلاعات", "موردی با این ترکیب در کتابخانه یافت نشد.")
+            return
+        self._load_calc_row(rows[0])       # newest match (list is id DESC)
+
     def _build_ui(self):
         layout = QVBoxLayout(self)
-        form = QFormLayout()
+        layout.addWidget(self._build_quick_select())
+
+        manual_group = QGroupBox("ورود دستی / محاسبه")
+        form = QFormLayout(manual_group)
 
         self.paper_type_combo = QComboBox()
         self.paper_type_combo.setEditable(True)
@@ -95,8 +199,10 @@ class PaperCalcTab(QWidget):
         btn_layout.addWidget(save_btn)
         btn_layout.addWidget(delete_btn)
 
-        layout.addLayout(form)
-        layout.addLayout(btn_layout)
+        btn_row = QWidget()
+        btn_row.setLayout(btn_layout)
+        form.addRow("", btn_row)
+        layout.addWidget(manual_group)
 
         self.paper_calc_table = QTableWidget(0, 10)
         self.paper_calc_table.setHorizontalHeaderLabels([
@@ -179,6 +285,8 @@ class PaperCalcTab(QWidget):
     def load_paper_calculations(self):
         try:
             rows = self.db.get_paper_calculations()
+            self._all_calcs = [dict(r) for r in rows]
+            self._refresh_quick_options()
             self.paper_calc_table.setUpdatesEnabled(False)
             self.paper_calc_table.setRowCount(len(rows))
             for row_idx, row in enumerate(rows):
@@ -197,27 +305,28 @@ class PaperCalcTab(QWidget):
         except Exception as err:
             QMessageBox.warning(self, "خطا", f"بارگذاری محاسبات با خطا مواجه شد:\n{err}")
 
+    def _load_calc_row(self, r: dict):
+        """Load a saved calculation (dict) into the manual form."""
+        self.editing_paper_calc_id = r.get('id')
+        self.paper_type_combo.setCurrentText(r.get('paper_type') or '')
+        self.paper_formula_combo.setCurrentText(r.get('formula_type') or 'دستی')
+        self.update_paper_inputs_visibility()
+        self.paper_weight_spin.setValue(float(r.get('weight') or 0))
+        self.paper_height_spin.setValue(float(r.get('height') or 0))
+        self.paper_length_spin.setValue(float(r.get('length') or 0))
+        self.paper_bundle_count_spin.setValue(int(r.get('bundle_count') or 0))
+        self.paper_bundle_weight_spin.setValue(float(r.get('bundle_weight') or 0))
+        self.paper_price_spin.setValue(float(r.get('price') or 0))
+        self.paper_unit_price_lbl.setText(f"{float(r.get('unit_price') or 0):,.2f}")
+
     def load_selected_paper_calc(self):
         row = self.paper_calc_table.currentRow()
         if row < 0:
             return
-
-        self.editing_paper_calc_id = int(self.paper_calc_table.item(row, 0).text())
-
-        self.paper_type_combo.setCurrentText(self.paper_calc_table.item(row, 1).text())
-        self.paper_formula_combo.setCurrentText(self.paper_calc_table.item(row, 2).text())
-
-        self.paper_weight_spin.setValue(float(self.paper_calc_table.item(row, 3).text()))
-        self.paper_height_spin.setValue(float(self.paper_calc_table.item(row, 4).text()))
-        self.paper_length_spin.setValue(float(self.paper_calc_table.item(row, 5).text()))
-        self.paper_bundle_count_spin.setValue(int(self.paper_calc_table.item(row, 6).text()))
-        self.paper_bundle_weight_spin.setValue(float(self.paper_calc_table.item(row, 7).text()))
-
-        price_text = self.paper_calc_table.item(row, 8).text().replace(',', '')
-        self.paper_price_spin.setValue(float(price_text))
-
-        unit_price_text = self.paper_calc_table.item(row, 9).text().replace(',', '')
-        self.paper_unit_price_lbl.setText(f"{float(unit_price_text):,.2f}")
+        calc_id = int(self.paper_calc_table.item(row, 0).text())
+        match = next((r for r in self._all_calcs if r['id'] == calc_id), None)
+        if match:
+            self._load_calc_row(match)
 
     def delete_paper_calculation(self):
         row = self.paper_calc_table.currentRow()
