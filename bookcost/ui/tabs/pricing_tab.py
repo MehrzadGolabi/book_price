@@ -4,7 +4,7 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QDoubleSpinBox, QFormLayout, QGroupBox, QHBoxLayout, QHeaderView, QLabel,
-    QScrollArea, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
+    QPushButton, QScrollArea, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
 from bookcost.core.pricing import (
@@ -89,6 +89,14 @@ class PricingTab(QWidget):
         self.distribution_spin.setValue(35.0)
         self.distribution_spin.setSuffix(" ٪")
         grp_a_form.addRow("سهم کتابفروشی / توزیع:", self.distribution_spin)
+
+        self.recalc_btn = QPushButton("محاسبه مجدد قیمت‌گذاری")
+        self.recalc_btn.setStyleSheet(
+            "padding: 8px; font-weight: bold; background-color: #2563eb; color: white;")
+        self.recalc_btn.setToolTip(
+            "پس از تغییر ضریب قیمت‌گذاری یا سهم توزیع، برای به‌روزرسانی محاسبات کلیک کنید.")
+        self.recalc_btn.clicked.connect(self.inputs_changed.emit)
+        grp_a_form.addRow("", self.recalc_btn)
 
         main_vbox.addWidget(grp_a)
 
