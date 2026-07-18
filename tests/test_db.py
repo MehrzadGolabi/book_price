@@ -235,3 +235,45 @@ def test_general_defaults(db):
     rows = db.get_general_defaults()
     assert len(rows) == 2
     assert {r['default_cost'] for r in rows} == {3_000_000, 300_000}
+
+
+# ── Volumes and cost lines (unified cost model) ─────────────────────────────
+
+def test_project_volumes_crud(db):
+    p = {'title': 'چندجلدی', 'creation_date': '1405/01/01', 'tiraj': 1000}
+    pid = db.insert_project(p, {})
+    assert db.get_project_volumes(pid) == []
+    db.replace_project_volumes(pid, [
+        {'volume_no': 1, 'name': 'جلد اول', 'pages': 160, 'forms_matn': 10, 'forms_jeld': 1},
+        {'volume_no': 2, 'name': 'جلد دوم', 'pages': 200, 'forms_matn': 13, 'forms_jeld': 1},
+    ])
+    vols = db.get_project_volumes(pid)
+    assert len(vols) == 2
+    assert vols[0]['name'] == 'جلد اول' and vols[0]['pages'] == 160
+    assert vols[1]['forms_matn'] == 13
+    # replace is a full swap
+    db.replace_project_volumes(pid, [{'volume_no': 1, 'name': 'تک', 'pages': 100}])
+    assert len(db.get_project_volumes(pid)) == 1
+    # cascade
+    db.delete_project(pid)
+    assert db.get_project_volumes(pid) == []
+
+
+def test_project_cost_lines_crud(db):
+    p = {'title': 'هزینه‌دار', 'creation_date': '1405/01/01', 'tiraj': 500}
+    pid = db.insert_project(p, {})
+    db.replace_project_cost_lines(pid, [
+        {'field_key': 'هزینه تالیف', 'display_name': 'هزینه تالیف',
+         'amount': 5_000_000, 'calc_type': 'fixed'},
+        {'field_key': 'هزینه صحافی', 'display_name': 'هزینه صحافی',
+         'amount': 2_000, 'calc_type': 'per_tiraj'},
+        {'field_key': 'custom_1', 'display_name': 'خدمات', 'amount': 300_000,
+         'calc_type': 'fixed', 'parent_key': 'هزینه قالب لترپرس', 'is_custom': 1},
+    ])
+    lines = db.get_project_cost_lines(pid)
+    assert len(lines) == 3
+    assert lines[0]['field_key'] == 'هزینه تالیف'
+    sub = [l for l in lines if l['parent_key']]
+    assert sub[0]['parent_key'] == 'هزینه قالب لترپرس' and sub[0]['is_custom'] == 1
+    db.delete_project(pid)
+    assert db.get_project_cost_lines(pid) == []

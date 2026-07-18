@@ -173,3 +173,38 @@ def test_papers_crud(db):
     db.delete_project(pid)
     cur = db._conn.execute("SELECT COUNT(*) FROM project_papers WHERE project_id=?", (pid,))
     assert cur.fetchone()[0] == 0
+
+
+def test_volumes_and_cost_lines_roundtrip(db, tmp_path):
+    pid = _make_project(db)
+    db.replace_project_volumes(pid, [
+        {'volume_no': 1, 'name': 'ج۱', 'pages': 160, 'forms_matn': 10, 'forms_jeld': 1},
+        {'volume_no': 2, 'name': 'ج۲', 'pages': 180, 'forms_matn': 12, 'forms_jeld': 1},
+    ])
+    db.replace_project_cost_lines(pid, [
+        {'field_key': 'هزینه تالیف', 'display_name': 'هزینه تالیف', 'amount': 5e6, 'calc_type': 'fixed'},
+        {'field_key': 'هزینه صحافی', 'display_name': 'هزینه صحافی', 'amount': 2000, 'calc_type': 'per_tiraj'},
+        {'field_key': 'c1', 'display_name': 'خدمات', 'amount': 3e5, 'calc_type': 'fixed',
+         'parent_key': 'هزینه قالب لترپرس', 'is_custom': 1},
+    ])
+    path = tmp_path / 'multi.ketab'
+    save_project_file(db, pid, str(path))
+    new_id = load_project_file(db, str(path))
+
+    vols = db.get_project_volumes(new_id)
+    assert [v['name'] for v in vols] == ['ج۱', 'ج۲']
+    assert vols[1]['forms_matn'] == 12
+    lines = db.get_project_cost_lines(new_id)
+    assert len(lines) == 3
+    assert any(l['parent_key'] == 'هزینه قالب لترپرس' and l['calc_type'] == 'fixed' for l in lines)
+    assert any(l['calc_type'] == 'per_tiraj' for l in lines)
+
+
+def test_v2_file_without_volumes_or_lines_still_imports(db):
+    data = {'format': FORMAT_NAME, 'version': 2,
+            'project': {'title': 'قدیمی۲', 'tiraj': 100}, 'details': {},
+            'papers': [{'section': 'matn', 'paper_type': 'ت', 'form_count': 4, 'unit_price': 900}]}
+    new_id = import_project(db, data)
+    assert db.get_project_volumes(new_id) == []
+    assert db.get_project_cost_lines(new_id) == []
+    assert len(db.get_project_papers(new_id)) == 1

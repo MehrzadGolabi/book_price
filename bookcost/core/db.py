@@ -49,6 +49,35 @@ SCHEMA_SQL = """
         FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
     );
 
+    -- One row per volume of a (possibly multi-volume) project. A single-volume
+    -- project has exactly one row (volume_no = 1).
+    CREATE TABLE IF NOT EXISTS project_volumes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id INTEGER NOT NULL,
+        volume_no INTEGER NOT NULL,
+        name TEXT,
+        pages INTEGER DEFAULT 0,
+        forms_matn REAL DEFAULT 0,
+        forms_jeld REAL DEFAULT 0,
+        FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+    );
+
+    -- Unified cost lines (built-in, custom, and sub-lines). Replaces the fixed
+    -- hazineh_* columns of project_details as the source of truth for costs;
+    -- the old columns are kept for backward-compatible reads/migration.
+    CREATE TABLE IF NOT EXISTS project_cost_lines (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id INTEGER NOT NULL,
+        field_key TEXT NOT NULL,        -- stable id (built-in name or custom uid)
+        parent_key TEXT,                -- non-null for a sub-line
+        display_name TEXT NOT NULL,
+        amount REAL DEFAULT 0,
+        calc_type TEXT DEFAULT 'fixed', -- fixed | per_tiraj | per_form | per_volume
+        is_custom INTEGER DEFAULT 0,
+        sort_order INTEGER DEFAULT 0,
+        FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+    );
+
     CREATE TABLE IF NOT EXISTS project_details (
         project_id INTEGER PRIMARY KEY,
         noeh_kaghaz_matn TEXT, noeh_chap_matn TEXT, noeh_rang_matn TEXT, noeh_zink_matn TEXT,
@@ -324,6 +353,60 @@ class BookDatabase:
             "VALUES (?,?,?,?,?)",
             [(project_id, e['section'], e.get('paper_type') or '',
               e.get('form_count') or 0, e.get('unit_price') or 0) for e in papers]
+        )
+        self._conn.commit()
+
+    # ── Project volumes (multi-volume) ────────────────────────────────────
+
+    def get_project_volumes(self, project_id: int) -> list:
+        """Volume rows ordered by volume_no: [{'volume_no','name','pages',
+        'forms_matn','forms_jeld'}]. Empty for legacy projects with no rows."""
+        cur = self._conn.cursor()
+        cur.execute(
+            "SELECT volume_no, name, pages, forms_matn, forms_jeld "
+            "FROM project_volumes WHERE project_id = ? ORDER BY volume_no",
+            (project_id,)
+        )
+        return [dict(r) for r in cur.fetchall()]
+
+    def replace_project_volumes(self, project_id: int, volumes: list):
+        """Replaces all volume rows. Each entry needs volume_no; name/pages/
+        forms_matn/forms_jeld optional."""
+        cur = self._conn.cursor()
+        cur.execute("DELETE FROM project_volumes WHERE project_id = ?", (project_id,))
+        cur.executemany(
+            "INSERT INTO project_volumes "
+            "(project_id, volume_no, name, pages, forms_matn, forms_jeld) VALUES (?,?,?,?,?,?)",
+            [(project_id, v.get('volume_no') or (i + 1), v.get('name') or '',
+              v.get('pages') or 0, v.get('forms_matn') or 0, v.get('forms_jeld') or 0)
+             for i, v in enumerate(volumes)]
+        )
+        self._conn.commit()
+
+    # ── Project cost lines (unified cost model) ───────────────────────────
+
+    def get_project_cost_lines(self, project_id: int) -> list:
+        """Cost lines ordered for display: [{'field_key','parent_key',
+        'display_name','amount','calc_type','is_custom'}]."""
+        cur = self._conn.cursor()
+        cur.execute(
+            "SELECT field_key, parent_key, display_name, amount, calc_type, is_custom "
+            "FROM project_cost_lines WHERE project_id = ? ORDER BY sort_order, id",
+            (project_id,)
+        )
+        return [dict(r) for r in cur.fetchall()]
+
+    def replace_project_cost_lines(self, project_id: int, lines: list):
+        """Replaces all cost lines. Each entry needs field_key and display_name;
+        parent_key/amount/calc_type/is_custom optional."""
+        cur = self._conn.cursor()
+        cur.execute("DELETE FROM project_cost_lines WHERE project_id = ?", (project_id,))
+        cur.executemany(
+            "INSERT INTO project_cost_lines (project_id, field_key, parent_key, "
+            "display_name, amount, calc_type, is_custom, sort_order) VALUES (?,?,?,?,?,?,?,?)",
+            [(project_id, e['field_key'], e.get('parent_key'), e['display_name'],
+              e.get('amount') or 0, e.get('calc_type') or 'fixed',
+              int(e.get('is_custom') or 0), i) for i, e in enumerate(lines)]
         )
         self._conn.commit()
 

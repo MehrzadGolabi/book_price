@@ -13,7 +13,7 @@ from bookcost.core.db import DETAIL_COLUMNS, PROJECT_COLUMNS
 from bookcost.core.fields import TYPE_FIELD_COLUMNS
 
 FORMAT_NAME = 'shahreqalam-book-project'
-FORMAT_VERSION = 2          # v2 adds 'papers' and the series columns
+FORMAT_VERSION = 3          # v2 added papers/series; v3 adds volumes + cost_lines
 
 # Proprietary extension for exported projects (double-clickable via the
 # installer's file association). The content is plain UTF-8 JSON.
@@ -35,6 +35,8 @@ def export_project(db, project_id: int) -> dict:
         'project': {c: project.get(c) for c in PROJECT_COLUMNS},
         'details': {c: details.get(c) for c in DETAIL_COLUMNS},
         'papers': db.get_project_papers(project_id),
+        'volumes': db.get_project_volumes(project_id),
+        'cost_lines': db.get_project_cost_lines(project_id),
     }
 
 
@@ -69,6 +71,20 @@ def import_project(db, data: dict) -> int:
                  if isinstance(e, dict) and e.get('section') in ('matn', 'jeld')]
         if valid:
             db.replace_project_papers(new_id, valid)
+
+    # Volumes and unified cost lines (format v3+)
+    volumes = data.get('volumes')
+    if isinstance(volumes, list):
+        valid = [v for v in volumes if isinstance(v, dict) and v.get('volume_no')]
+        if valid:
+            db.replace_project_volumes(new_id, valid)
+
+    cost_lines = data.get('cost_lines')
+    if isinstance(cost_lines, list):
+        valid = [c for c in cost_lines
+                 if isinstance(c, dict) and c.get('field_key') and c.get('display_name')]
+        if valid:
+            db.replace_project_cost_lines(new_id, valid)
 
     # Register imported type values so the editable combos list them
     for category, col in TYPE_FIELD_COLUMNS.items():

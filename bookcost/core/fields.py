@@ -58,6 +58,25 @@ DYNAMIC_TYPE_CATEGORIES = list(TYPE_FIELD_COLUMNS.keys())
 # Cost fields whose values are computed automatically (read-only in the UI)
 AUTO_COST_FIELDS = frozenset({'هزینه زینک', 'هزینه کاغذ متن', 'هزینه کاغذ جلد'})
 
+# ── Per-field default calculation type (item 6) ───────────────────────────
+# Only the exceptions are listed; everything else defaults to FIXED. Users can
+# override per field via the calc-type combo. Values are CalcType .value
+# strings to avoid importing cost_model here (keeps this module dependency-free).
+#
+#   per_tiraj → cost is per printed copy (binding, finishing, consumables)
+DEFAULT_CALC_TYPES = {
+    'هزینه صحافی':      'per_tiraj',
+    'هزینه جلدسازی':    'per_tiraj',
+    'هزینه ملزومات':    'per_tiraj',
+    'هزینه خدمات دايكات': 'per_tiraj',
+    'هزینه برش و بسته‌بندی': 'per_tiraj',
+}
+
+
+def default_calc_type(field_name: str) -> str:
+    """CalcType.value for a built-in cost field (FIXED unless overridden)."""
+    return DEFAULT_CALC_TYPES.get(field_name, 'fixed')
+
 # ── Default-price ("قیمت پایه") categorization ────────────────────────────
 #
 # Prices live where their data lives:
