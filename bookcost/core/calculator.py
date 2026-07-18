@@ -113,6 +113,54 @@ class CostCalculator:
     }
 
     @staticmethod
+    def parse_size(size_str: str) -> tuple:
+        """'70×100' / '70x100' → (70.0, 100.0); returns (0,0) on failure."""
+        try:
+            a, b = map(float, size_str.replace('×', 'x').split('x'))
+            return a, b
+        except (ValueError, AttributeError):
+            return 0.0, 0.0
+
+    @classmethod
+    def zinc_size_label(cls, zinc: str) -> str:
+        """Human label of a zinc plate's physical size, e.g. '۶۰×۹۰ سانتی‌متر'."""
+        dims = cls.ZINC_DIMS.get(zinc)
+        if not dims:
+            return ''
+        return f"{int(dims[0])}×{int(dims[1])} سانتی‌متر"
+
+    @classmethod
+    def actual_print_size(cls, paper_size_str: str, cut_in_half: bool) -> str:
+        """The sheet size actually fed to the press. When the bought sheet is
+        cut in half the LARGER dimension is halved (100×70 → 50×70,
+        90×60 → 45×60), which is how the press yields 2 sheets per bought one."""
+        w, h = cls.parse_size(paper_size_str)
+        if w <= 0 or h <= 0:
+            return paper_size_str
+        if cut_in_half:
+            if w >= h:
+                w = w / 2
+            else:
+                h = h / 2
+        return f"{w:g}×{h:g}"
+
+    @staticmethod
+    def sheets_needed(total_forms: float, sides: int, tiraj: int, waste_pct: float) -> float:
+        """Physical press sheets consumed: (forms / sides) × tiraj × (1+waste).
+        `sides` is 2 for double-sided printing (front+back on one sheet)."""
+        sides = max(1, sides)
+        waste = 1.0 + (waste_pct or 0) / 100.0
+        return (total_forms / sides) * max(0, tiraj) * waste
+
+    @classmethod
+    def bought_paper_count(cls, total_forms: float, sides: int, tiraj: int,
+                           waste_pct: float, cut_in_half: bool) -> float:
+        """Bought full sheets: press sheets ÷ 2 when the bought sheet is cut in
+        half (one bought sheet then serves two press sheets)."""
+        needed = cls.sheets_needed(total_forms, sides, tiraj, waste_pct)
+        return needed / 2.0 if cut_in_half else needed
+
+    @staticmethod
     def multi_paper_cost(papers: list, sides: int, tiraj: int, waste: float) -> float:
         """Sums sheet costs over multiple paper entries.
 

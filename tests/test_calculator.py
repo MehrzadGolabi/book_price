@@ -229,3 +229,30 @@ def test_totals_series_divides_cover_print():
     assert r['adjusted_costs']['هزینه چاپ جلد'] == 300_000.0
     # input dict untouched
     assert costs['هزینه چاپ جلد'] == 900_000.0
+
+
+# ── Actual print size / paper counts (items 8, 9, 12) ───────────────────────
+
+def test_zinc_size_label():
+    assert calc.zinc_size_label('زینک 2.5 ورقی') == '60×90 سانتی‌متر'
+    assert calc.zinc_size_label('زینک 3.5 ورقی') == '70×100 سانتی‌متر'
+    assert calc.zinc_size_label('ناموجود') == ''
+
+
+def test_actual_print_size_cut():
+    assert calc.actual_print_size('70×100', False) == '70×100'
+    # larger dim halved
+    assert calc.actual_print_size('70×100', True) == '70×50'
+    assert calc.actual_print_size('60×90', True) == '60×45'
+    assert calc.actual_print_size('100×70', True) == '50×70'
+    assert calc.actual_print_size('', True) == ''
+
+
+def test_sheets_needed_and_bought():
+    # 10 forms, double-sided, 1000 copies, 5% waste
+    needed = calc.sheets_needed(10, 2, 1000, 5.0)
+    assert abs(needed - 5250.0) < 0.01          # (10/2)*1000*1.05
+    assert calc.bought_paper_count(10, 2, 1000, 5.0, False) == needed
+    assert calc.bought_paper_count(10, 2, 1000, 5.0, True) == needed / 2
+    # single-sided doubles the sheets
+    assert abs(calc.sheets_needed(10, 1, 1000, 0.0) - 10000.0) < 0.01

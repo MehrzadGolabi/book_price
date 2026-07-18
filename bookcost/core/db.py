@@ -151,6 +151,7 @@ _MIGRATION_COLS = [
     ("pricing_multiplier", "REAL DEFAULT 2.5"),
     ("distribution_percent", "REAL DEFAULT 35.0"),
     ("tarjomeh_percent", "REAL DEFAULT 0"),
+    ("paper_cut_half", "INTEGER DEFAULT 0"),
 ]
 
 # Additive migrations for the projects table (same try/except ALTER pattern)
@@ -191,7 +192,7 @@ DETAIL_COLUMNS = [
     'hazineh_horoofchini', 'hazineh_mojawwez_ershad', 'hazineh_shabok',
     'hazineh_talakoobi', 'hazineh_uv_mowzei', 'hazineh_barjasteh',
     'book_type_preset', 'pricing_multiplier', 'distribution_percent',
-    'tarjomeh_percent',
+    'tarjomeh_percent', 'paper_cut_half',
 ]
 
 # Tables a valid database (or backup) must contain.

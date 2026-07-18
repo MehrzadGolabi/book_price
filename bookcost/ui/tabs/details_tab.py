@@ -22,6 +22,12 @@ from bookcost.ui.dialogs.paper_price_dialog import PaperPriceDialog
 from bookcost.ui.widgets.paper_list_widget import PaperListWidget
 from bookcost.ui.widgets.print_layout_widget import PrintLayoutWidget
 
+# Type categories shown as free-text combos in section 1. Paper and zinc types
+# are chosen in the merged smart paper/zinc section instead (their
+# project_details columns are derived from that section at collect time), so
+# only the print/color categories remain here.
+VISIBLE_TYPE_CATEGORIES = ['نوع چاپ متن', 'نوع رنگ متن', 'نوع چاپ جلد', 'نوع رنگ جلد']
+
 
 class DetailsTab(QWidget):
     calculate_requested = Signal()
@@ -38,8 +44,10 @@ class DetailsTab(QWidget):
         self._build_ui()
         self._connect_signals()
         self.refresh_zinc_price_labels()
+        self._update_zinc_size_labels()
         self.suggest_optimal_layout()
         self._refresh_layout_widget()
+        self._update_paper_readouts()
         # Apply default preset without zeroing (fields are already zero)
         self._apply_preset("شومیز ساده", zero_hidden=False)
 
@@ -153,7 +161,23 @@ class DetailsTab(QWidget):
         # ── Paper size selector (always visible) ──────────────────────────
         self.paper_size_combo = QComboBox()
         self.paper_size_combo.addItems(["70×100", "60×90", "50×70"])
-        form_layout.addRow("اندازه کاغذ چاپ:", self.paper_size_combo)
+        form_layout.addRow("اندازه کاغذ خریداری:", self.paper_size_combo)
+
+        # Cut-in-half toggle + actual press size (item 8)
+        cut_row = QWidget()
+        cut_row_layout = QHBoxLayout(cut_row)
+        cut_row_layout.setContentsMargins(0, 0, 0, 0)
+        self.cut_half_chk = QCheckBox("کاغذ نصف می‌شود (برش)")
+        self.cut_half_chk.setToolTip(
+            "کاغذ خریداری‌شده پیش از چاپ نصف می‌شود (مثلاً ۱۰۰×۷۰ به ۵۰×۷۰)؛ "
+            "در نتیجه از هر ورق خریداری دو ورق چاپی به‌دست می‌آید.")
+        self.lbl_actual_print_size = QLabel("—")
+        self.lbl_actual_print_size.setStyleSheet("color: #1d4ed8; font-weight: bold;")
+        cut_row_layout.addWidget(self.cut_half_chk)
+        cut_row_layout.addStretch()
+        cut_row_layout.addWidget(QLabel("اندازه واقعی چاپ:"))
+        cut_row_layout.addWidget(self.lbl_actual_print_size)
+        form_layout.addRow("", cut_row)
 
         # ── Custom book dimensions (hidden for standard formats) ──────────
         dims_widget = QWidget()
@@ -181,19 +205,19 @@ class DetailsTab(QWidget):
         self.orientation_label.setStyleSheet("color: #1d4ed8;")
         form_layout.addRow("جهت بهینه:", self.orientation_label)
 
-        # ── Dynamic type categories ───────────────────────────────────────
-        category_items = {dtype: [] for dtype in DYNAMIC_TYPE_CATEGORIES}
-        try:
-            for dtype in DYNAMIC_TYPE_CATEGORIES:
-                category_items[dtype] = self.db.get_categories(dtype)
-        except Exception as e:
-            print("Error pre-fetching categories:", e)
-
-        for dtype in DYNAMIC_TYPE_CATEGORIES:
+        # ── Dynamic type categories (print/color only) ────────────────────
+        # Paper (نوع کاغذ متن/جلد) and zinc (نوع زینک متن/جلد) types were here
+        # too but duplicated the smart paper/zinc section and didn't affect
+        # totals; they're removed and derived from that section instead.
+        for dtype in VISIBLE_TYPE_CATEGORIES:
             combo = QComboBox()
             combo.setEditable(True)
             combo.setInsertPolicy(QComboBox.InsertAtBottom)
-            combo.addItems(category_items[dtype])
+            try:
+                combo.addItems(self.db.get_categories(dtype))
+            except Exception as e:
+                print("Error pre-fetching categories:", e)
+            combo.setCurrentIndex(-1)
             self.inputs[dtype] = combo
             form_layout.addRow(dtype + ":", combo)
 
@@ -289,10 +313,19 @@ class DetailsTab(QWidget):
         self.unit_price_paper_matn_spin.setMaximum(9999999999.99)
         self.unit_price_paper_matn_spin.setGroupSeparatorShown(True)
 
-        calc_layout.addRow("تعداد فرم متن (خودکار):", self.form_matn_spin)
+        self.form_matn_spin.setToolTip(
+            "به‌صورت خودکار پیشنهاد می‌شود اما همیشه قابل ویرایش است.")
+        calc_layout.addRow("تعداد فرم متن (خودکار — قابل ویرایش):", self.form_matn_spin)
         calc_layout.addRow("", self.double_sided_matn_chk)
         calc_layout.addRow("تعداد رنگ متن:", self.color_matn_combo)
-        calc_layout.addRow("ابعاد زینک متن:", self.zinc_size_matn_combo)
+        zinc_matn_row = QWidget()
+        zinc_matn_layout = QHBoxLayout(zinc_matn_row)
+        zinc_matn_layout.setContentsMargins(0, 0, 0, 0)
+        zinc_matn_layout.addWidget(self.zinc_size_matn_combo, 1)
+        self.lbl_zinc_matn_size = QLabel("—")
+        self.lbl_zinc_matn_size.setStyleSheet("color: #475569;")
+        zinc_matn_layout.addWidget(self.lbl_zinc_matn_size)
+        calc_layout.addRow("ابعاد زینک متن:", zinc_matn_row)
         self.zinc_price_matn_label = QLabel("—")
         self.zinc_price_matn_label.setAlignment(Qt.AlignCenter)
         calc_layout.addRow("قیمت واحد زینک متن:", self.zinc_price_matn_label)
@@ -317,6 +350,8 @@ class DetailsTab(QWidget):
 
         # Cover (jeld) setup
         self.form_jeld_spin = QSpinBox()
+        self.form_jeld_spin.setMaximum(1000)
+        self.form_jeld_spin.setToolTip("همیشه قابل ویرایش است (بازنویسی دستی مجاز).")
         self.double_sided_jeld_chk = QCheckBox("چاپ دورو (جلد)")
         self.double_sided_jeld_chk.setChecked(False)
 
@@ -331,10 +366,17 @@ class DetailsTab(QWidget):
         self.unit_price_paper_jeld_spin.setMaximum(9999999999.99)
         self.unit_price_paper_jeld_spin.setGroupSeparatorShown(True)
 
-        calc_layout.addRow("تعداد فرم جلد:", self.form_jeld_spin)
+        calc_layout.addRow("تعداد فرم جلد (قابل ویرایش):", self.form_jeld_spin)
         calc_layout.addRow("", self.double_sided_jeld_chk)
         calc_layout.addRow("تعداد رنگ جلد:", self.color_jeld_combo)
-        calc_layout.addRow("ابعاد زینک جلد:", self.zinc_size_jeld_combo)
+        zinc_jeld_row = QWidget()
+        zinc_jeld_layout = QHBoxLayout(zinc_jeld_row)
+        zinc_jeld_layout.setContentsMargins(0, 0, 0, 0)
+        zinc_jeld_layout.addWidget(self.zinc_size_jeld_combo, 1)
+        self.lbl_zinc_jeld_size = QLabel("—")
+        self.lbl_zinc_jeld_size.setStyleSheet("color: #475569;")
+        zinc_jeld_layout.addWidget(self.lbl_zinc_jeld_size)
+        calc_layout.addRow("ابعاد زینک جلد:", zinc_jeld_row)
         self.zinc_price_jeld_label = QLabel("—")
         self.zinc_price_jeld_label.setAlignment(Qt.AlignCenter)
         calc_layout.addRow("قیمت واحد زینک جلد:", self.zinc_price_jeld_label)
@@ -364,6 +406,14 @@ class DetailsTab(QWidget):
         self.waste_percent_spin.setSuffix(" ٪")
         calc_layout.addRow("ضایعات کاغذ:", self.waste_percent_spin)
 
+        # Total paper usage readout (item 12)
+        self.lbl_paper_usage = QLabel("—")
+        self.lbl_paper_usage.setWordWrap(True)
+        self.lbl_paper_usage.setStyleSheet(
+            "color: #0f172a; background:#eff6ff; border:1px solid #bfdbfe;"
+            "border-radius:6px; padding:8px; font-weight:bold;")
+        calc_layout.addRow("مصرف کاغذ پروژه:", self.lbl_paper_usage)
+
         self.calc_group.setLayout(calc_layout)
         return self.calc_group
 
@@ -389,9 +439,13 @@ class DetailsTab(QWidget):
         self.color_matn_combo.currentIndexChanged.connect(self.auto_calculate_costs)
         self.color_jeld_combo.currentIndexChanged.connect(self.auto_calculate_costs)
         self.zinc_size_matn_combo.currentIndexChanged.connect(self.refresh_zinc_price_labels)
+        self.zinc_size_matn_combo.currentIndexChanged.connect(self._update_zinc_size_labels)
         self.zinc_size_matn_combo.currentIndexChanged.connect(self.auto_calculate_costs)
         self.zinc_size_jeld_combo.currentIndexChanged.connect(self.refresh_zinc_price_labels)
+        self.zinc_size_jeld_combo.currentIndexChanged.connect(self._update_zinc_size_labels)
         self.zinc_size_jeld_combo.currentIndexChanged.connect(self.auto_calculate_costs)
+        self.cut_half_chk.toggled.connect(self._update_paper_readouts)
+        self.paper_size_combo.currentIndexChanged.connect(self._update_paper_readouts)
         self.book_width_spin.valueChanged.connect(self.suggest_optimal_layout)
         self.book_height_spin.valueChanged.connect(self.suggest_optimal_layout)
         self.paper_size_combo.currentIndexChanged.connect(self.suggest_optimal_layout)
@@ -430,18 +484,65 @@ class DetailsTab(QWidget):
         self.auto_calculate_costs()
 
     def _on_papers_changed(self):
-        """Multi-paper mode disables the corresponding single-paper inputs."""
+        """Multi-paper mode drives the unit-price fields from the list, but form
+        counts always stay editable (item 5) — they're synced to the list total
+        so the displayed value is right, yet the user can override afterward."""
         matn_multi = bool(self.papers_matn_list.entries())
         jeld_multi = bool(self.papers_jeld_list.entries())
-        for w in (self.unit_price_paper_matn_spin,):
-            w.setEnabled(not matn_multi)
-            w.setToolTip("چند نوع کاغذ متن فعال است؛ قیمت‌ها از لیست خوانده می‌شود."
-                         if matn_multi else "")
-        for w in (self.unit_price_paper_jeld_spin, self.form_jeld_spin):
-            w.setEnabled(not jeld_multi)
-            w.setToolTip("چند نوع کاغذ جلد فعال است؛ فرم‌ها و قیمت‌ها از لیست خوانده می‌شود."
-                         if jeld_multi else "")
+        self.unit_price_paper_matn_spin.setEnabled(not matn_multi)
+        self.unit_price_paper_matn_spin.setToolTip(
+            "چند نوع کاغذ متن فعال است؛ قیمت‌ها از لیست خوانده می‌شود." if matn_multi else "")
+        self.unit_price_paper_jeld_spin.setEnabled(not jeld_multi)
+        self.unit_price_paper_jeld_spin.setToolTip(
+            "چند نوع کاغذ جلد فعال است؛ قیمت‌ها از لیست خوانده می‌شود." if jeld_multi else "")
+
+        # Sync form spinboxes to the multi-paper totals (still editable)
+        if matn_multi:
+            total = sum(e['form_count'] for e in self.papers_matn_list.entries())
+            self.form_matn_spin.blockSignals(True)
+            self.form_matn_spin.setValue(int(total))
+            self.form_matn_spin.blockSignals(False)
+        if jeld_multi:
+            total = sum(e['form_count'] for e in self.papers_jeld_list.entries())
+            self.form_jeld_spin.blockSignals(True)
+            self.form_jeld_spin.setValue(int(total))
+            self.form_jeld_spin.blockSignals(False)
         self.auto_calculate_costs()
+
+    def _update_zinc_size_labels(self):
+        self.lbl_zinc_matn_size.setText(
+            self.calculator.zinc_size_label(self.zinc_size_matn_combo.currentText()) or '—')
+        self.lbl_zinc_jeld_size.setText(
+            self.calculator.zinc_size_label(self.zinc_size_jeld_combo.currentText()) or '—')
+
+    def _update_paper_readouts(self):
+        """Actual print size (item 8) + total bought-paper usage (item 12)."""
+        cut = self.cut_half_chk.isChecked()
+        self.lbl_actual_print_size.setText(
+            self.calculator.actual_print_size(self.paper_size_combo.currentText(), cut))
+
+        tiraj = self.inputs['تیراژ'].value()
+        waste = self.waste_percent_spin.value()
+        papers_matn = self.papers_matn_list.entries()
+        papers_jeld = self.papers_jeld_list.entries()
+        form_matn = (sum(e['form_count'] for e in papers_matn)
+                     if papers_matn else self.form_matn_spin.value())
+        form_jeld = (sum(e['form_count'] for e in papers_jeld)
+                     if papers_jeld else self.form_jeld_spin.value())
+        sides_matn = 2 if self.double_sided_matn_chk.isChecked() else 1
+        sides_jeld = 2 if self.double_sided_jeld_chk.isChecked() else 1
+        vols = self.series_volumes()
+
+        bought_matn = self.calculator.bought_paper_count(form_matn, sides_matn, tiraj, waste, cut) * vols
+        bought_jeld = self.calculator.bought_paper_count(form_jeld, sides_jeld, tiraj, waste, cut)
+        total = bought_matn + bought_jeld
+        if tiraj <= 0 or (form_matn <= 0 and form_jeld <= 0):
+            self.lbl_paper_usage.setText("برای محاسبه، تیراژ و تعداد فرم را وارد کنید.")
+            return
+        cut_note = " (با احتساب برش به نصف)" if cut else ""
+        self.lbl_paper_usage.setText(
+            f"کل کاغذ خریداری: {total:,.0f} برگ{cut_note}  —  "
+            f"متن: {bought_matn:,.0f} برگ · جلد: {bought_jeld:,.0f} برگ")
 
     def series_info(self) -> dict:
         """{'series_name', 'volume_no', 'series_volumes'} — Nones when off."""
@@ -511,6 +612,7 @@ class DetailsTab(QWidget):
         )
         for field, value in results.items():
             self.cost_inputs[field].setValue(value)
+        self._update_paper_readouts()
 
     def open_paper_price_dialog(self, target):
         dlg = PaperPriceDialog(self.db, target, parent=self)
@@ -621,7 +723,7 @@ class DetailsTab(QWidget):
     def reload_categories(self):
         """Re-reads the dynamic type combos from the database (e.g. after a
         restore or an import added new type values)."""
-        for dtype in DYNAMIC_TYPE_CATEGORIES:
+        for dtype in VISIBLE_TYPE_CATEGORIES:
             combo = self.inputs[dtype]
             current = combo.currentText()
             combo.blockSignals(True)
@@ -665,10 +767,23 @@ class DetailsTab(QWidget):
         if field in self.cost_inputs:
             self.cost_inputs[field].setValue(value)
 
+    def _derived_type_values(self) -> dict:
+        """Paper/zinc type-column values derived from the merged smart section
+        (those free-text combos were removed from section 1)."""
+        matn_papers = self.papers_matn_list.entries()
+        jeld_papers = self.papers_jeld_list.entries()
+        return {
+            'نوع کاغذ متن': (matn_papers[0]['paper_type'] if matn_papers else ''),
+            'نوع کاغذ جلد': (jeld_papers[0]['paper_type'] if jeld_papers else ''),
+            'نوع زینک متن': self.zinc_size_matn_combo.currentText(),
+            'نوع زینک جلد': self.zinc_size_jeld_combo.currentText(),
+        }
+
     def type_selections(self) -> list:
-        """[(category, current text)] for all non-empty dynamic type combos."""
+        """[(category, current text)] for the visible print/color type combos
+        (used for default-price matching)."""
         items = []
-        for category in DYNAMIC_TYPE_CATEGORIES:
+        for category in VISIBLE_TYPE_CATEGORIES:
             text = self.inputs[category].currentText().strip()
             if text:
                 items.append((category, text))
@@ -686,14 +801,22 @@ class DetailsTab(QWidget):
         return rows
 
     def report_features(self) -> list:
-        return [(key, self.inputs[key].currentText()) for key in DYNAMIC_TYPE_CATEGORIES]
+        rows = [(key, self.inputs[key].currentText()) for key in VISIBLE_TYPE_CATEGORIES]
+        derived = self._derived_type_values()
+        for key in ('نوع کاغذ متن', 'نوع کاغذ جلد', 'نوع زینک متن', 'نوع زینک جلد'):
+            if derived.get(key):
+                rows.append((key, derived[key]))
+        return rows
 
     def report_print_specs(self) -> list:
         """[(label, value)] snapshot of the pre-press setup for the PDF report."""
         yes_no = lambda checked: "بله" if checked else "خیر"
         specs = [
             ("تعداد صفحات کتاب", f"{self.total_pages_spin.value():,}"),
-            ("اندازه کاغذ چاپ", self.paper_size_combo.currentText()),
+            ("اندازه کاغذ خریداری", self.paper_size_combo.currentText()),
+            ("اندازه واقعی چاپ",
+             self.calculator.actual_print_size(self.paper_size_combo.currentText(),
+                                               self.cut_half_chk.isChecked())),
             ("تعداد فرم متن", f"{self.form_matn_spin.value():,}"),
             ("چاپ دورو متن", yes_no(self.double_sided_matn_chk.isChecked())),
             ("تعداد رنگ متن", self.color_matn_combo.currentText()),
@@ -776,9 +899,14 @@ class DetailsTab(QWidget):
             'total_pages': self.total_pages_spin.value(),
             'book_type_preset': self.book_type_combo.currentText(),
             'tarjomeh_percent': self.tarjomeh_pct(),
+            'paper_cut_half': int(self.cut_half_chk.isChecked()),
         }
+        derived = self._derived_type_values()
         for category, col in TYPE_FIELD_COLUMNS.items():
-            d[col] = self.inputs[category].currentText()
+            if category in self.inputs:
+                d[col] = self.inputs[category].currentText()
+            else:
+                d[col] = derived.get(category, '')
         for field, col in COST_FIELD_COLUMNS.items():
             d[col] = self.cost_inputs[field].value()
         return d
@@ -808,9 +936,12 @@ class DetailsTab(QWidget):
 
         if details.get('tarjomeh_percent') is not None:
             self.tarjomeh_input.setValue(float(details['tarjomeh_percent']))
+        self.cut_half_chk.setChecked(bool(details.get('paper_cut_half')))
 
         for category, col in TYPE_FIELD_COLUMNS.items():
-            if details.get(col):
+            # Only the visible print/color combos still exist; paper/zinc types
+            # are derived from the smart section, not restored here.
+            if category in self.inputs and details.get(col):
                 self.inputs[category].setCurrentText(details[col])
 
         color_indices = {1: 0, 2: 1, 4: 2}
@@ -900,9 +1031,11 @@ class DetailsTab(QWidget):
         self.series_name_input.clear()
         self.volume_no_spin.setValue(1)
         self.series_volumes_spin.setValue(2)
+        self.cut_half_chk.setChecked(False)
         self.papers_matn_list.clear()
         self.papers_jeld_list.clear()
         self._on_papers_changed()
+        self._update_paper_readouts()
 
         self.book_type_combo.blockSignals(True)
         self.book_type_combo.setCurrentText("شومیز ساده")
