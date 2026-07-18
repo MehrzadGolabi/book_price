@@ -88,7 +88,7 @@ class CustomCostWidget(QWidget):
 
         entry = (row_widget, name_edit, parent_combo, amount_spin, calc_combo)
         remove_btn.clicked.connect(lambda: self._remove(entry))
-        name_edit.textChanged.connect(self.changed.emit)
+        name_edit.textChanged.connect(lambda _t: self.changed.emit())
         amount_spin.valueChanged.connect(lambda _v: self.changed.emit())
         calc_combo.currentIndexChanged.connect(lambda _i: self.changed.emit())
         parent_combo.currentIndexChanged.connect(lambda _i: self.changed.emit())

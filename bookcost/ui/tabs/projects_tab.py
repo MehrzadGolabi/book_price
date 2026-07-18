@@ -62,9 +62,13 @@ class ProjectsTab(QWidget):
             self.project_table.setRowCount(len(results))
             for row_idx, row_data in enumerate(results):
                 row = dict(row_data)
-                if row.get('series_name') or (row.get('series_volumes') or 1) > 1:
-                    series_txt = (f"{row.get('series_name') or '—'} — "
-                                  f"جلد {row.get('volume_no') or '?'} از {row.get('series_volumes') or '?'}")
+                vols = row.get('series_volumes') or 1
+                if row.get('series_name') or vols > 1:
+                    name = row.get('series_name') or '—'
+                    if row.get('volume_no'):   # legacy per-volume project
+                        series_txt = f"{name} — جلد {row['volume_no']} از {vols}"
+                    else:                      # multi-volume project
+                        series_txt = f"{name} — {vols} جلد"
                 else:
                     series_txt = ""
                 series_item = QTableWidgetItem(series_txt)

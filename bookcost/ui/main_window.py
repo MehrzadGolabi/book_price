@@ -73,6 +73,7 @@ class BookCostCalculator(QMainWindow):
             return repr((self.details_tab.collect_project(),
                          self.details_tab.collect_details(),
                          self.details_tab.papers(),
+                         self.details_tab.volumes(),
                          self.details_tab.build_cost_lines(),
                          self.pricing_tab.multiplier(),
                          self.pricing_tab.distribution_pct()))
@@ -281,6 +282,7 @@ class BookCostCalculator(QMainWindow):
             else:
                 self.current_project_id = self.db.insert_project(p, d)
             self.db.replace_project_papers(self.current_project_id, self.details_tab.papers())
+            self.db.replace_project_volumes(self.current_project_id, self.details_tab.volumes())
             self.db.replace_project_cost_lines(
                 self.current_project_id, self.details_tab.build_cost_lines())
 
@@ -310,9 +312,10 @@ class BookCostCalculator(QMainWindow):
                 return
             details = self.db.get_project_details(project_id)
             papers = self.db.get_project_papers(project_id)
+            volumes = self.db.get_project_volumes(project_id)
             cost_lines = self.db.get_project_cost_lines(project_id)
 
-            self.details_tab.populate(project, details, papers)
+            self.details_tab.populate(project, details, papers, volumes)
             self.details_tab.populate_cost_lines(cost_lines)
             if details:
                 details = dict(details)
