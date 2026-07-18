@@ -254,6 +254,32 @@ class BookCostCalculator(QMainWindow):
         breakdown = {k: v for k, v in resolved_breakdown(lines, ctx).items() if v > 0}
         return totals, breakdown
 
+    def _report_cost_groups(self):
+        """[(group, [(label, resolved_amount)])] for the PDF — built-in fields
+        resolved by calc type, plus a custom group with named lines/subfields."""
+        from bookcost.core.cost_model import CostContext, resolve_amount
+        dt = self.details_tab
+        ctx = CostContext(tiraj=dt.tiraj(), total_forms=dt.total_forms(),
+                          volume_count=dt.series_volumes())
+        resolved = {}
+        custom = []
+        for d in dt.build_cost_lines():
+            amt = resolve_amount(d['amount'], d['calc_type'], ctx)
+            if d['is_custom']:
+                label = d['display_name']
+                if d['parent_key']:
+                    label = f"{d['display_name']} ({d['parent_key']})"
+                custom.append((label, amt))
+            else:
+                resolved[d['field_key']] = amt
+        groups = [
+            (group, [(f, resolved.get(f, 0.0)) for f in fields])
+            for group, fields in CostCalculator.COST_GROUPS.items()
+        ]
+        if custom:
+            groups.append(("هزینه‌های سفارشی", custom))
+        return groups
+
     def refresh_pricing_tab(self):
         self.pricing_tab.refresh(
             total_cost=self.calc_tab.total_cost,
@@ -550,13 +576,9 @@ class BookCostCalculator(QMainWindow):
         if not file_path:
             return
 
-        # Series share adjustments applied so the printed rows sum to the total
-        cost_values = self.calculator.apply_series_adjustments(
-            self.details_tab.cost_values(), self.details_tab.series_volumes())
-        cost_groups = [
-            (group, [(f, cost_values[f]) for f in fields])
-            for group, fields in CostCalculator.COST_GROUPS.items()
-        ]
+        # Resolved cost lines so the printed rows sum to the total (per-tiraj
+        # ×tiraj, per-form ×forms, per-volume ×count, custom lines included)
+        cost_groups = self._report_cost_groups()
 
         data = ReportData(
             title=self.details_tab.title(),

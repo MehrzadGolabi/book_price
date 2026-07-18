@@ -921,7 +921,7 @@ class DetailsTab(QWidget):
             rows.append((key, val))
         info = self.series_info()
         if info['series_name'] or (info['series_volumes'] or 1) > 1:
-            rows.append(("سری", f"{info['series_name'] or '—'} — جلد {info['volume_no']} از {info['series_volumes']}"))
+            rows.append(("سری", f"{info['series_name'] or '—'} — {info['series_volumes']} جلد"))
         return rows
 
     def report_features(self) -> list:
