@@ -295,6 +295,12 @@ QWidget#scroll_content { background-color: #f8fafc; }
 QSpinBox, QDoubleSpinBox {
     max-width: 220px;
 }
+/* Paper pre-calc tab: a two-column grid, not a single narrow label:field
+   column, so these numeric fields need real width to stay usable */
+QDoubleSpinBox#paperCalcField, QSpinBox#paperCalcField {
+    max-width: 16777215px;
+    min-width: 160px;
+}
 
 /* Read-only auto-calculated fields */
 QDoubleSpinBox:read-only {

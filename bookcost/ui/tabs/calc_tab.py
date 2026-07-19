@@ -17,6 +17,15 @@ from bookcost.resources import resource_path
 # reversed, disconnected glyphs. The bundled Tahoma is passed by file path so
 # rendering never depends on system font resolution.
 _FARSI_FONT = FontProperties(fname=resource_path('tahoma.ttf'))
+_FARSI_FONT_SMALL = _FARSI_FONT.copy()
+_FARSI_FONT_SMALL.set_size(9)
+
+# Slices smaller than this share of the total are folded into a single «سایر
+# هزینه‌ها» wedge — with the unified cost model a project can have 15-30+
+# non-zero cost lines (built-ins, subfields, custom fields), and on-wedge
+# labels for that many thin slices always collide. A legend lists every slice
+# by name instead, so no label ever overlaps another.
+_MIN_SLICE_SHARE = 0.02
 
 
 class CalcTab(QWidget):
@@ -74,21 +83,48 @@ class CalcTab(QWidget):
         self.set_totals(0.0, 0.0)
 
     def update_chart(self, cost_values: dict):
-        """Redraws the pie chart from {persian field name: value}."""
+        """Redraws the pie chart from {persian field name: value}.
+
+        Labels live in a side legend rather than on the wedges — with many
+        thin slices, on-wedge labels inevitably collide. Slices under
+        ``_MIN_SLICE_SHARE`` of the total are grouped into «سایر هزینه‌ها» so
+        the legend stays short and each remaining wedge is legible.
+        """
         self.figure.clear()
         ax = self.figure.add_subplot(111)
 
-        labels = [name for name, val in cost_values.items() if val > 0]
-        sizes = [val for val in cost_values.values() if val > 0]
+        items = sorted(((name, val) for name, val in cost_values.items() if val > 0),
+                       key=lambda kv: kv[1], reverse=True)
 
-        if not sizes:
+        if not items:
             ax.text(0.5, 0.5, "هیچ هزینه‌ای وارد نشده است", ha='center', va='center',
                     fontproperties=_FARSI_FONT)
             self.canvas.draw()
             return
 
-        ax.pie(sizes, labels=labels, autopct='%1.1f%%', startangle=140,
-               textprops={'fontproperties': _FARSI_FONT})
+        total = sum(val for _, val in items)
+        major = [(n, v) for n, v in items if v / total >= _MIN_SLICE_SHARE]
+        minor = [(n, v) for n, v in items if v / total < _MIN_SLICE_SHARE]
+        if len(minor) == 1:
+            major.append(minor[0])
+        elif len(minor) > 1:
+            major.append(("سایر هزینه‌ها", sum(v for _, v in minor)))
+
+        labels = [n for n, _ in major]
+        sizes = [v for _, v in major]
+
+        def autopct(pct):
+            return f"{pct:.1f}%" if pct >= 4 else ""
+
+        wedges, _labels, _pct_texts = ax.pie(
+            sizes, labels=None, autopct=autopct, pctdistance=0.75, startangle=140,
+            textprops={'fontproperties': _FARSI_FONT_SMALL, 'color': 'white'},
+        )
         ax.axis('equal')
+
+        legend_labels = [f"{n}  —  {v / total * 100:.1f}%" for n, v in major]
+        ax.legend(wedges, legend_labels, loc='center left', bbox_to_anchor=(1.0, 0.5),
+                  prop=_FARSI_FONT_SMALL, frameon=False)
+
         self.figure.tight_layout()
         self.canvas.draw()

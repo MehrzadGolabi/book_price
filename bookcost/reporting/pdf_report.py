@@ -278,9 +278,9 @@ class _SinglePage:
         c.setLineWidth(0.8)
         c.setStrokeColorRGB(0, 0, 0)
         c.line(w - m - 4.5 * cm, sig_y, w - m, sig_y)
-        self.text("مهر و امضای ناشر", w - m - 2.25 * cm, sig_y - 0.55 * cm, 8.5, align='center')
+        self.text("امضا مدیر نشر", w - m - 2.25 * cm, sig_y - 0.55 * cm, 8.5, align='center')
         c.line(m, sig_y, m + 4.5 * cm, sig_y)
-        self.text("امضای نویسنده / سفارش‌دهنده", m + 2.25 * cm, sig_y - 0.55 * cm,
+        self.text("امضا مدیر تولید", m + 2.25 * cm, sig_y - 0.55 * cm,
                   8.5, align='center')
 
         return y  # top of the band = bottom limit for the body

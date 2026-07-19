@@ -34,6 +34,18 @@ from bookcost.ui.widgets.volumes_widget import VolumesWidget
 # only the print/color categories remain here.
 VISIBLE_TYPE_CATEGORIES = ['نوع چاپ متن', 'نوع رنگ متن', 'نوع چاپ جلد', 'نوع رنگ جلد']
 
+# Visualizer toggle button — filled = showing (default), outline = hidden
+_VISUALIZER_ON_QSS = (
+    "QPushButton { background-color: #1e293b; color: #f8fafc; padding: 6px 14px;"
+    " border-radius: 6px; font-weight: 600; }"
+    "QPushButton:hover { background-color: #334155; }"
+)
+_VISUALIZER_OFF_QSS = (
+    "QPushButton { background-color: transparent; color: #1d4ed8; padding: 6px 14px;"
+    " border: 1px solid #1d4ed8; border-radius: 6px; font-weight: 600; }"
+    "QPushButton:hover { background-color: #eff6ff; }"
+)
+
 
 class DetailsTab(QWidget):
     calculate_requested = Signal()
@@ -321,9 +333,25 @@ class DetailsTab(QWidget):
             "background-color: #1e293b; color: #ffffff; font-weight: bold;"
             "font-size: 15px; padding: 10px; border-top: 2px solid #2563eb;")
 
+        # Toggle for the print-layout visualizer — kept outside the scroll
+        # area so it's always reachable, not buried after scrolling down.
+        toggle_row = QHBoxLayout()
+        toggle_row.setContentsMargins(8, 6, 8, 6)
+        self.toggle_visualizer_btn = QPushButton("🖼 پنهان‌کردن نمایشگر")
+        self.toggle_visualizer_btn.setCheckable(True)
+        self.toggle_visualizer_btn.setChecked(True)
+        self.toggle_visualizer_btn.setStyleSheet(_VISUALIZER_ON_QSS)
+        self.toggle_visualizer_btn.setToolTip(
+            "نمایشگر ابعاد و صفحه‌آرایی را پنهان یا نمایان می‌کند؛ با پنهان کردن آن "
+            "بخش محاسبات کل عرض صفحه را در اختیار می‌گیرد.")
+        self.toggle_visualizer_btn.toggled.connect(self._on_toggle_visualizer)
+        toggle_row.addWidget(self.toggle_visualizer_btn)
+        toggle_row.addStretch()
+
         left_col = QVBoxLayout()
         left_col.setContentsMargins(0, 0, 0, 0)
         left_col.setSpacing(0)
+        left_col.addLayout(toggle_row)
         left_col.addWidget(scroll_area)
         left_col.addWidget(self.lbl_running_total)
 
@@ -336,6 +364,13 @@ class DetailsTab(QWidget):
         self.setLayoutDirection(Qt.LeftToRight)
         outer_layout.addLayout(left_col)
         outer_layout.addWidget(self.layout_widget)
+
+    def _on_toggle_visualizer(self, checked: bool):
+        self.layout_widget.setVisible(checked)
+        self.toggle_visualizer_btn.setText(
+            "🖼 پنهان‌کردن نمایشگر" if checked else "🖼 نمایش نمایشگر")
+        self.toggle_visualizer_btn.setStyleSheet(
+            _VISUALIZER_ON_QSS if checked else _VISUALIZER_OFF_QSS)
 
     def _build_precalc_group(self) -> QGroupBox:
         self.calc_group = QGroupBox("② پیش از چاپ — محاسبات هوشمند کاغذ و زینک")
@@ -492,6 +527,7 @@ class DetailsTab(QWidget):
         self.zinc_size_jeld_combo.currentIndexChanged.connect(self._update_zinc_size_labels)
         self.zinc_size_jeld_combo.currentIndexChanged.connect(self.auto_calculate_costs)
         self.cut_half_chk.toggled.connect(self._update_paper_readouts)
+        self.cut_half_chk.toggled.connect(self._refresh_layout_widget)
         self.paper_size_combo.currentIndexChanged.connect(self._update_paper_readouts)
         self.book_width_spin.valueChanged.connect(self.suggest_optimal_layout)
         self.book_height_spin.valueChanged.connect(self.suggest_optimal_layout)
@@ -503,6 +539,10 @@ class DetailsTab(QWidget):
         self.zinc_size_jeld_combo.currentIndexChanged.connect(self._refresh_layout_widget)
         self.book_width_spin.valueChanged.connect(self._refresh_layout_widget)
         self.book_height_spin.valueChanged.connect(self._refresh_layout_widget)
+        self.form_matn_spin.valueChanged.connect(self._refresh_layout_widget)
+        self.form_jeld_spin.valueChanged.connect(self._refresh_layout_widget)
+        self.papers_matn_list.changed.connect(self._refresh_layout_widget)
+        self.papers_jeld_list.changed.connect(self._refresh_layout_widget)
 
     # ── Live behaviors ─────────────────────────────────────────────────────
 
@@ -835,13 +875,14 @@ class DetailsTab(QWidget):
         qate = self.inputs['قطع'].currentText()
         specs = CostCalculator.OPTIMAL_SPECS.get(qate, {})
 
-        paper_str = self.paper_size_combo.currentText().replace('×', 'x')
-        try:
-            paper_w, paper_h = map(float, paper_str.split('x'))
-        except ValueError:
+        cut = self.cut_half_chk.isChecked()
+        actual_str = self.calculator.actual_print_size(
+            self.paper_size_combo.currentText(), cut)
+        paper_w, paper_h = self.calculator.parse_size(actual_str)
+        if paper_w <= 0 or paper_h <= 0:
             return
 
-        if specs.get('pages_per_sheet') is None and self.book_dims_row_widget.isVisible():
+        if specs.get('pages_per_sheet') is None and self.book_dims_row_widget.isVisibleTo(self):
             book_w = self.book_width_spin.value()
             book_h = self.book_height_spin.value()
         else:
@@ -867,6 +908,9 @@ class DetailsTab(QWidget):
             pages_per_sheet,
             self.zinc_size_matn_combo.currentText(),
             self.zinc_size_jeld_combo.currentText(),
+            cut_in_half=cut,
+            papers_matn=self.papers_matn_list.entries(),
+            papers_jeld=self.papers_jeld_list.entries(),
         )
 
     def _apply_preset(self, preset_name: str, zero_hidden: bool = True):

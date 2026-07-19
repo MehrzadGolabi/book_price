@@ -2,8 +2,9 @@
 keep a saved library of calculations (paper_calculations table)."""
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QColor, QFont
 from PySide6.QtWidgets import (
-    QComboBox, QDoubleSpinBox, QFormLayout, QGroupBox,
+    QComboBox, QDoubleSpinBox, QFormLayout, QGridLayout, QGroupBox,
     QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMessageBox, QPushButton,
     QSpinBox, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
@@ -37,8 +38,9 @@ class PaperCalcTab(QWidget):
         return f"{int(row['bundle_count'] or 0)}"
 
     def _build_quick_select(self) -> QGroupBox:
-        grp = QGroupBox("انتخاب سریع از کتابخانه (بر اساس محاسبات ذخیره‌شده)")
+        grp = QGroupBox("📚 انتخاب سریع از کتابخانه (بر اساس محاسبات ذخیره‌شده)")
         gl = QFormLayout(grp)
+        gl.setVerticalSpacing(10)
         self.q_type = QComboBox()
         self.q_size = QComboBox()
         self.q_gramaj = QComboBox()
@@ -49,9 +51,11 @@ class PaperCalcTab(QWidget):
         gl.addRow("گراماژ:", self.q_gramaj)
         gl.addRow("تعداد بند:", self.q_bundle)
         self.q_hint = QLabel("یک ترکیب را انتخاب کنید تا قیمت واحد آن بارگذاری شود.")
+        self.q_hint.setWordWrap(True)
         self.q_hint.setStyleSheet("color:#475569;")
         gl.addRow("", self.q_hint)
         use_btn = QPushButton("بارگذاری در فرم و محاسبه")
+        use_btn.setStyleSheet(_PRIMARY_BTN_QSS)
         use_btn.clicked.connect(self._apply_quick_select)
         gl.addRow("", use_btn)
         self.q_type.currentIndexChanged.connect(lambda: self._refresh_cascade(1))
@@ -121,12 +125,32 @@ class PaperCalcTab(QWidget):
             return
         self._load_calc_row(rows[0])       # newest match (list is id DESC)
 
+    # ── UI construction ─────────────────────────────────────────────────────
+
+    def _wide_spin(self, cls):
+        """A QSpinBox/QDoubleSpinBox exempted from the app-wide 220px cap —
+        this tab's two-column grid has real room, and cramped fields were the
+        original complaint."""
+        w = cls()
+        w.setObjectName("paperCalcField")
+        return w
+
     def _build_ui(self):
         layout = QVBoxLayout(self)
+        layout.setSpacing(12)
         layout.addWidget(self._build_quick_select())
+        layout.addWidget(self._build_manual_entry())
+        layout.addWidget(self._build_library_table(), 1)
 
-        manual_group = QGroupBox("ورود دستی / محاسبه")
-        form = QFormLayout(manual_group)
+    def _build_manual_entry(self) -> QGroupBox:
+        manual_group = QGroupBox("🧮 ورود دستی / محاسبه")
+        outer = QVBoxLayout(manual_group)
+
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(16)
+        grid.setVerticalSpacing(10)
+        grid.setColumnStretch(1, 1)
+        grid.setColumnStretch(3, 1)
 
         self.paper_type_combo = QComboBox()
         self.paper_type_combo.setEditable(True)
@@ -134,7 +158,6 @@ class PaperCalcTab(QWidget):
         self.paper_type_combo.addItems([
             "ایندربرد", "گلاسه", "بالک", "پشت طوسی", "تحریر", "مقوای مغزی"
         ])
-        form.addRow("نوع کاغذ:", self.paper_type_combo)
 
         self.paper_formula_combo = QComboBox()
         self.paper_formula_combo.addItems([
@@ -143,78 +166,121 @@ class PaperCalcTab(QWidget):
             "دستی"
         ])
         self.paper_formula_combo.currentTextChanged.connect(self.update_paper_inputs_visibility)
-        form.addRow("نحوه محاسبه:", self.paper_formula_combo)
 
-        self.paper_weight_spin = QDoubleSpinBox()
+        self.paper_weight_spin = self._wide_spin(QDoubleSpinBox)
         self.paper_weight_spin.setRange(0, 2000)
         self.paper_weight_spin.setDecimals(0)
         self.paper_weight_spin.setSuffix(" گرم/مترمربع")
         self.paper_weight_spin.setToolTip(
             "گراماژ کاغذ: وزن یک مترمربع از کاغذ بر حسب گرم — مثلاً تحریر ۸۰ یعنی ۸۰ گرم/مترمربع.\n"
             "از این مقدار همراه با ابعاد ورق و قیمت هر کیلوگرم، قیمت یک ورق محاسبه می‌شود.")
-        weight_label = QLabel("گراماژ کاغذ (وزن):")
-        weight_label.setToolTip(self.paper_weight_spin.toolTip())
-        form.addRow(weight_label, self.paper_weight_spin)
+        self._weight_label = QLabel("گراماژ کاغذ (وزن):")
+        self._weight_label.setToolTip(self.paper_weight_spin.toolTip())
 
-        self.paper_height_spin = QDoubleSpinBox()
+        self.paper_price_spin = self._wide_spin(QDoubleSpinBox)
+        self.paper_price_spin.setMaximum(9999999999.99)
+        self.paper_price_spin.setGroupSeparatorShown(True)
+        self.paper_price_label = QLabel("قیمت / قیمت بند (تومان):")
+
+        self.paper_height_spin = self._wide_spin(QDoubleSpinBox)
         self.paper_height_spin.setMaximum(999999)
-        form.addRow("ارتفاع (سانتی‌متر):", self.paper_height_spin)
+        self.paper_height_spin.setSuffix(" سانتی‌متر")
 
-        self.paper_length_spin = QDoubleSpinBox()
+        self.paper_length_spin = self._wide_spin(QDoubleSpinBox)
         self.paper_length_spin.setMaximum(999999)
-        form.addRow("طول (سانتی‌متر):", self.paper_length_spin)
+        self.paper_length_spin.setSuffix(" سانتی‌متر")
 
-        self.paper_bundle_count_spin = QSpinBox()
+        self.paper_bundle_count_spin = self._wide_spin(QSpinBox)
         self.paper_bundle_count_spin.setMaximum(999999)
-        form.addRow("تعداد در بند:", self.paper_bundle_count_spin)
+        self.paper_bundle_count_spin.setSuffix(" برگ")
 
-        self.paper_bundle_weight_spin = QDoubleSpinBox()
+        self.paper_bundle_weight_spin = self._wide_spin(QDoubleSpinBox)
         self.paper_bundle_weight_spin.setMaximum(999999)
         self.paper_bundle_weight_spin.setSuffix(" کیلوگرم")
         self.paper_bundle_weight_spin.setToolTip(
             "وزن کل یک بند کاغذ (اختیاری، فقط برای ثبت در کتابخانه).")
-        form.addRow("وزن بند:", self.paper_bundle_weight_spin)
 
-        self.paper_price_spin = QDoubleSpinBox()
-        self.paper_price_spin.setMaximum(9999999999.99)
-        self.paper_price_spin.setGroupSeparatorShown(True)
-        self.paper_price_label = QLabel("قیمت / قیمت بند (تومان):")
-        form.addRow(self.paper_price_label, self.paper_price_spin)
+        # Two label:field pairs per row so fields get real width instead of
+        # being stacked into one narrow column.
+        rows = [
+            ("نوع کاغذ:", self.paper_type_combo, "نحوه محاسبه:", self.paper_formula_combo),
+            (self._weight_label, self.paper_weight_spin, self.paper_price_label, self.paper_price_spin),
+            ("ارتفاع:", self.paper_height_spin, "طول:", self.paper_length_spin),
+            ("تعداد در بند:", self.paper_bundle_count_spin, "وزن بند:", self.paper_bundle_weight_spin),
+        ]
+        for r, (lbl1, w1, lbl2, w2) in enumerate(rows):
+            l1 = lbl1 if isinstance(lbl1, QLabel) else QLabel(lbl1)
+            l2 = lbl2 if isinstance(lbl2, QLabel) else QLabel(lbl2)
+            for lbl in (l1, l2):
+                lbl.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            grid.addWidget(l1, r, 0)
+            grid.addWidget(w1, r, 1)
+            grid.addWidget(l2, r, 2)
+            grid.addWidget(w2, r, 3)
+        outer.addLayout(grid)
 
-        self.paper_unit_price_lbl = QLabel("0")
-        self.paper_unit_price_lbl.setStyleSheet("font-size: 16px; font-weight: bold; color: darkblue;")
-        form.addRow("قیمت نهایی یک واحد:", self.paper_unit_price_lbl)
+        # Result banner — full width, semantic success color (matches the
+        # cover-price banner in قیمت‌گذاری و سودآوری for a consistent look)
+        result_row = QHBoxLayout()
+        result_row.addWidget(QLabel("قیمت نهایی یک واحد:"))
+        self.paper_unit_price_lbl = QLabel("0 تومان")
+        self.paper_unit_price_lbl.setAlignment(Qt.AlignCenter)
+        self.paper_unit_price_lbl.setStyleSheet(
+            "font-size: 18px; font-weight: bold; color: #15803d;"
+            "background-color: #f0fdf4; border: 1px solid #bbf7d0;"
+            "padding: 10px; border-radius: 6px;")
+        result_row.addWidget(self.paper_unit_price_lbl, 1)
+        outer.addLayout(result_row)
 
         btn_layout = QHBoxLayout()
         calc_btn = QPushButton("محاسبه")
+        calc_btn.setStyleSheet(_PRIMARY_BTN_QSS)
         calc_btn.clicked.connect(self.calculate_paper_unit_price)
 
         save_btn = QPushButton("ذخیره محاسبه")
+        save_btn.setStyleSheet(_SUCCESS_BTN_QSS)
         save_btn.clicked.connect(self.save_paper_calculation)
-
-        delete_btn = QPushButton("حذف ردیف")
-        delete_btn.clicked.connect(self.delete_paper_calculation)
 
         btn_layout.addWidget(calc_btn)
         btn_layout.addWidget(save_btn)
-        btn_layout.addWidget(delete_btn)
+        btn_layout.addStretch()
+        outer.addLayout(btn_layout)
 
-        btn_row = QWidget()
-        btn_row.setLayout(btn_layout)
-        form.addRow("", btn_row)
-        layout.addWidget(manual_group)
+        return manual_group
 
-        self.paper_calc_table = QTableWidget(0, 10)
+    def _build_library_table(self) -> QGroupBox:
+        table_group = QGroupBox("🗂 کتابخانه محاسبات ذخیره‌شده")
+        table_layout = QVBoxLayout(table_group)
+
+        self.paper_calc_table = QTableWidget(0, 9)
         self.paper_calc_table.setHorizontalHeaderLabels([
-            "ID", "نوع کاغذ", "نحوه محاسبه", "وزن", "ارتفاع", "طول",
-            "تعداد در بند", "وزن در بند", "قیمت ورودی", "قیمت واحد"
+            "ID", "نوع کاغذ", "نحوه محاسبه", "گراماژ", "اندازه (ارتفاع×طول)",
+            "تعداد در بند", "وزن بند (kg)", "قیمت ورودی", "قیمت واحد (تومان)"
         ])
-        self.paper_calc_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        header = self.paper_calc_table.horizontalHeader()
+        header.setSectionResizeMode(QHeaderView.Stretch)
+        header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        header.setMinimumSectionSize(90)
+        self.paper_calc_table.verticalHeader().setVisible(False)
+        self.paper_calc_table.verticalHeader().setDefaultSectionSize(34)
+        self.paper_calc_table.setAlternatingRowColors(True)
         self.paper_calc_table.setSelectionBehavior(QTableWidget.SelectRows)
         self.paper_calc_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.paper_calc_table.setMinimumHeight(240)
         self.paper_calc_table.doubleClicked.connect(self.load_selected_paper_calc)
+        table_layout.addWidget(self.paper_calc_table, 1)
 
-        layout.addWidget(self.paper_calc_table)
+        table_footer = QHBoxLayout()
+        hint_label = QLabel("برای ویرایش، روی ردیف دابل‌کلیک کنید")
+        hint_label.setStyleSheet("color: #475569; font-size: 12px;")
+        delete_btn = QPushButton("حذف ردیف انتخاب‌شده")
+        delete_btn.setStyleSheet(_DANGER_BTN_QSS)
+        delete_btn.clicked.connect(self.delete_paper_calculation)
+        table_footer.addWidget(hint_label, 1)
+        table_footer.addWidget(delete_btn)
+        table_layout.addLayout(table_footer)
+
+        return table_group
 
     def update_paper_inputs_visibility(self):
         formula = self.paper_formula_combo.currentText()
@@ -252,7 +318,7 @@ class PaperCalcTab(QWidget):
             price=self.paper_price_spin.value(),
             count=self.paper_bundle_count_spin.value(),
         )
-        self.paper_unit_price_lbl.setText(f"{unit_price:,.2f}")
+        self.paper_unit_price_lbl.setText(f"{unit_price:,.2f} تومان")
         return unit_price
 
     def save_paper_calculation(self):
@@ -282,6 +348,10 @@ class PaperCalcTab(QWidget):
         except Exception as err:
             QMessageBox.critical(self, "خطا", f"ذخیره محاسبه با خطا مواجه شد:\n{err}")
 
+    @staticmethod
+    def _dash_or(text: str, applicable: bool) -> str:
+        return text if applicable else "—"
+
     def load_paper_calculations(self):
         try:
             rows = self.db.get_paper_calculations()
@@ -290,16 +360,34 @@ class PaperCalcTab(QWidget):
             self.paper_calc_table.setUpdatesEnabled(False)
             self.paper_calc_table.setRowCount(len(rows))
             for row_idx, row in enumerate(rows):
+                by_weight = row['formula_type'] == "ابعاد، وزن و قیمت (هر واحد)"
+                by_bundle = row['formula_type'] == "قیمت هر بند و تعداد در بند"
+
                 self.paper_calc_table.setItem(row_idx, 0, QTableWidgetItem(str(row['id'])))
                 self.paper_calc_table.setItem(row_idx, 1, QTableWidgetItem(row['paper_type']))
                 self.paper_calc_table.setItem(row_idx, 2, QTableWidgetItem(row['formula_type']))
-                self.paper_calc_table.setItem(row_idx, 3, QTableWidgetItem(str(row['weight'])))
-                self.paper_calc_table.setItem(row_idx, 4, QTableWidgetItem(str(row['height'])))
-                self.paper_calc_table.setItem(row_idx, 5, QTableWidgetItem(str(row['length'])))
-                self.paper_calc_table.setItem(row_idx, 6, QTableWidgetItem(str(row['bundle_count'])))
-                self.paper_calc_table.setItem(row_idx, 7, QTableWidgetItem(str(row['bundle_weight'])))
-                self.paper_calc_table.setItem(row_idx, 8, QTableWidgetItem(f"{row['price']:,.2f}"))
-                self.paper_calc_table.setItem(row_idx, 9, QTableWidgetItem(f"{row['unit_price']:,.2f}"))
+                self.paper_calc_table.setItem(
+                    row_idx, 3, QTableWidgetItem(self._dash_or(self._gramaj_str(row), by_weight)))
+                self.paper_calc_table.setItem(
+                    row_idx, 4, QTableWidgetItem(self._dash_or(self._size_str(row), by_weight)))
+                self.paper_calc_table.setItem(
+                    row_idx, 5, QTableWidgetItem(self._dash_or(self._bundle_str(row), by_bundle)))
+                bundle_w = f"{row['bundle_weight']:g}" if row['bundle_weight'] else "0"
+                self.paper_calc_table.setItem(
+                    row_idx, 6, QTableWidgetItem(self._dash_or(bundle_w, by_bundle)))
+                self.paper_calc_table.setItem(
+                    row_idx, 7, QTableWidgetItem(f"{row['price']:,.2f}"))
+
+                unit_item = QTableWidgetItem(f"{row['unit_price']:,.0f}")
+                unit_item.setForeground(QColor('#15803d'))
+                font = QFont()
+                font.setBold(True)
+                unit_item.setFont(font)
+                self.paper_calc_table.setItem(row_idx, 8, unit_item)
+
+                for col in range(1, 9):
+                    self.paper_calc_table.item(row_idx, col).setTextAlignment(
+                        Qt.AlignCenter)
             self.paper_calc_table.setUpdatesEnabled(True)
             self.paper_calc_table.hideColumn(0)  # Hide ID
         except Exception as err:
@@ -317,7 +405,7 @@ class PaperCalcTab(QWidget):
         self.paper_bundle_count_spin.setValue(int(r.get('bundle_count') or 0))
         self.paper_bundle_weight_spin.setValue(float(r.get('bundle_weight') or 0))
         self.paper_price_spin.setValue(float(r.get('price') or 0))
-        self.paper_unit_price_lbl.setText(f"{float(r.get('unit_price') or 0):,.2f}")
+        self.paper_unit_price_lbl.setText(f"{float(r.get('unit_price') or 0):,.2f} تومان")
 
     def load_selected_paper_calc(self):
         row = self.paper_calc_table.currentRow()
@@ -345,3 +433,21 @@ class PaperCalcTab(QWidget):
             except Exception as err:
                 QMessageBox.critical(self, "خطا", f"حذف با خطا مواجه شد:\n{err}")
 
+
+# Semantic action-button styles, reused across this tab (mirrors the
+# green/red/blue vocabulary already established elsewhere in the app)
+_PRIMARY_BTN_QSS = (
+    "QPushButton { background-color: #2563eb; color: white; padding: 8px 18px;"
+    " border-radius: 6px; font-weight: 600; }"
+    "QPushButton:hover { background-color: #1d4ed8; }"
+)
+_SUCCESS_BTN_QSS = (
+    "QPushButton { background-color: #15803d; color: white; padding: 8px 18px;"
+    " border-radius: 6px; font-weight: 600; }"
+    "QPushButton:hover { background-color: #166534; }"
+)
+_DANGER_BTN_QSS = (
+    "QPushButton { background-color: #c0392b; color: white; padding: 6px 16px;"
+    " border-radius: 4px; }"
+    "QPushButton:hover { background-color: #a93226; }"
+)
