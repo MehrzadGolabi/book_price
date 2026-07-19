@@ -4,9 +4,9 @@ keep a saved library of calculations (paper_calculations table)."""
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QFont
 from PySide6.QtWidgets import (
-    QComboBox, QDoubleSpinBox, QFormLayout, QGridLayout, QGroupBox,
+    QComboBox, QDoubleSpinBox, QFormLayout, QGroupBox,
     QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMessageBox, QPushButton,
-    QSpinBox, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
+    QScrollArea, QSpinBox, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
 
@@ -136,21 +136,37 @@ class PaperCalcTab(QWidget):
         return w
 
     def _build_ui(self):
-        layout = QVBoxLayout(self)
-        layout.setSpacing(12)
-        layout.addWidget(self._build_quick_select())
-        layout.addWidget(self._build_manual_entry())
-        layout.addWidget(self._build_library_table(), 1)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+
+        # The single-column fields (wide, per the redesign) make this a tall
+        # form — scroll it instead of forcing the whole window to grow past
+        # its normal size. The library table stays outside the scroll area,
+        # always visible, and gets whatever vertical space is left over.
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.NoFrame)
+        scroll_content = QWidget()
+        scroll_layout = QVBoxLayout(scroll_content)
+        scroll_layout.setContentsMargins(0, 0, 0, 8)
+        scroll_layout.setSpacing(12)
+        scroll_layout.addWidget(self._build_quick_select())
+        scroll_layout.addWidget(self._build_manual_entry())
+        scroll.setWidget(scroll_content)
+
+        outer.addWidget(scroll)
+        outer.addWidget(self._build_library_table(), 1)
 
     def _build_manual_entry(self) -> QGroupBox:
         manual_group = QGroupBox("🧮 ورود دستی / محاسبه")
         outer = QVBoxLayout(manual_group)
 
-        grid = QGridLayout()
-        grid.setHorizontalSpacing(16)
-        grid.setVerticalSpacing(10)
-        grid.setColumnStretch(1, 1)
-        grid.setColumnStretch(3, 1)
+        # One field per row, same as the quick-select group above it — that
+        # gives each box the full row width instead of splitting it in two.
+        form = QFormLayout()
+        form.setVerticalSpacing(10)
+        form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
 
         self.paper_type_combo = QComboBox()
         self.paper_type_combo.setEditable(True)
@@ -200,24 +216,15 @@ class PaperCalcTab(QWidget):
         self.paper_bundle_weight_spin.setToolTip(
             "وزن کل یک بند کاغذ (اختیاری، فقط برای ثبت در کتابخانه).")
 
-        # Two label:field pairs per row so fields get real width instead of
-        # being stacked into one narrow column.
-        rows = [
-            ("نوع کاغذ:", self.paper_type_combo, "نحوه محاسبه:", self.paper_formula_combo),
-            (self._weight_label, self.paper_weight_spin, self.paper_price_label, self.paper_price_spin),
-            ("ارتفاع:", self.paper_height_spin, "طول:", self.paper_length_spin),
-            ("تعداد در بند:", self.paper_bundle_count_spin, "وزن بند:", self.paper_bundle_weight_spin),
-        ]
-        for r, (lbl1, w1, lbl2, w2) in enumerate(rows):
-            l1 = lbl1 if isinstance(lbl1, QLabel) else QLabel(lbl1)
-            l2 = lbl2 if isinstance(lbl2, QLabel) else QLabel(lbl2)
-            for lbl in (l1, l2):
-                lbl.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-            grid.addWidget(l1, r, 0)
-            grid.addWidget(w1, r, 1)
-            grid.addWidget(l2, r, 2)
-            grid.addWidget(w2, r, 3)
-        outer.addLayout(grid)
+        form.addRow("نوع کاغذ:", self.paper_type_combo)
+        form.addRow("نحوه محاسبه:", self.paper_formula_combo)
+        form.addRow(self._weight_label, self.paper_weight_spin)
+        form.addRow(self.paper_price_label, self.paper_price_spin)
+        form.addRow("ارتفاع:", self.paper_height_spin)
+        form.addRow("طول:", self.paper_length_spin)
+        form.addRow("تعداد در بند:", self.paper_bundle_count_spin)
+        form.addRow("وزن بند:", self.paper_bundle_weight_spin)
+        outer.addLayout(form)
 
         # Result banner — full width, semantic success color (matches the
         # cover-price banner in قیمت‌گذاری و سودآوری for a consistent look)
