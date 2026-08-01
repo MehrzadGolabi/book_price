@@ -49,7 +49,7 @@ class ProjectsTab(QWidget):
         self.project_stack.addWidget(self.project_table)  # index 1: table
 
         new_project_btn = QPushButton("ایجاد پروژه جدید")
-        new_project_btn.clicked.connect(self.new_requested.emit)
+        new_project_btn.clicked.connect(lambda *_: self.new_requested.emit())
 
         layout.addLayout(search_layout)
         layout.addWidget(self.project_stack)

@@ -14,10 +14,12 @@ from PySide6.QtWidgets import QApplication
 
 from bookcost.resources import resource_path
 from bookcost.ui.main_window import BookCostCalculator
+from bookcost.ui.utils import install_no_wheel_filter
 
 
 def main():
     app = QApplication(sys.argv)
+    install_no_wheel_filter(app)
     app.setStyle("Fusion")
     logo = resource_path("logo.png")
     if os.path.exists(logo):

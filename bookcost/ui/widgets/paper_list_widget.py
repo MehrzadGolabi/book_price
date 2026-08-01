@@ -31,13 +31,16 @@ class PaperListWidget(QWidget):
     changed = Signal()
 
     def __init__(self, placeholder: str, items_provider=None, price_lookup=None,
-                 dims_lookup=None, default_forms=None, parent=None):
+                 dims_lookup=None, default_forms=None, default_price=None,
+                 calc_callback=None, parent=None):
         super().__init__(parent)
         self._placeholder = placeholder
         self._items_provider = items_provider
         self._price_lookup = price_lookup
         self._dims_lookup = dims_lookup
         self._default_forms = default_forms
+        self._default_price = default_price
+        self._calc_callback = calc_callback
         self._rows = []            # list of (row_widget, type_combo, forms_spin, price_spin)
 
         layout = QVBoxLayout(self)
@@ -68,13 +71,19 @@ class PaperListWidget(QWidget):
         return list(self._items_provider()) if self._items_provider else []
 
     def _add_row_interactive(self):
-        """Button click: prefill forms with what's left of the suggested total."""
+        """Button click: prefill forms with what's left of the suggested total,
+        and carry over current paper price if creating the first row."""
         form_count = 0
         if self._default_forms:
             total = self._default_forms() or 0
             used = sum(f.value() for _, _, f, _ in self._rows)
             form_count = max(0, total - used)
-        self.add_row(form_count=form_count)
+
+        unit_price = 0.0
+        if len(self._rows) == 0 and self._default_price:
+            unit_price = float(self._default_price() or 0.0)
+
+        self.add_row(form_count=form_count, unit_price=unit_price)
         self.changed.emit()
 
     def add_row(self, paper_type: str = '', form_count: float = 0, unit_price: float = 0.0):
@@ -105,6 +114,15 @@ class PaperListWidget(QWidget):
         price_spin.setValue(unit_price)
         price_spin.setAlignment(Qt.AlignCenter)
 
+        calc_btn = QPushButton("🧮")
+        calc_btn.setFixedWidth(30)
+        calc_btn.setToolTip("محاسبه قیمت واحد برای این کاغذ")
+        calc_btn.setStyleSheet("background-color: #2a6496; color: white; padding: 2px 4px; border-radius: 4px; font-weight: bold;")
+        if self._calc_callback:
+            calc_btn.clicked.connect(lambda _, ps=price_spin: self._calc_callback(ps))
+        else:
+            calc_btn.setVisible(False)
+
         remove_btn = QPushButton("✕")
         remove_btn.setFixedWidth(30)
         remove_btn.setToolTip("حذف این ردیف")
@@ -114,6 +132,7 @@ class PaperListWidget(QWidget):
         h.addWidget(forms_spin, 2)
         h.addWidget(QLabel("قیمت:"))
         h.addWidget(price_spin, 3)
+        h.addWidget(calc_btn)
         h.addWidget(remove_btn)
 
         entry = (row_widget, type_combo, forms_spin, price_spin)

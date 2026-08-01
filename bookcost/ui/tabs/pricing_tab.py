@@ -27,8 +27,8 @@ class PricingTab(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._build_ui()
-        self.pricing_multiplier_spin.valueChanged.connect(self.inputs_changed.emit)
-        self.distribution_spin.valueChanged.connect(self.inputs_changed.emit)
+        self.pricing_multiplier_spin.valueChanged.connect(lambda *_: self.inputs_changed.emit())
+        self.distribution_spin.valueChanged.connect(lambda *_: self.inputs_changed.emit())
 
     def _build_ui(self):
         scroll = QScrollArea()
@@ -95,7 +95,7 @@ class PricingTab(QWidget):
             "padding: 8px; font-weight: bold; background-color: #2563eb; color: white;")
         self.recalc_btn.setToolTip(
             "پس از تغییر ضریب قیمت‌گذاری یا سهم توزیع، برای به‌روزرسانی محاسبات کلیک کنید.")
-        self.recalc_btn.clicked.connect(self.inputs_changed.emit)
+        self.recalc_btn.clicked.connect(lambda *_: self.inputs_changed.emit())
         grp_a_form.addRow("", self.recalc_btn)
 
         main_vbox.addWidget(grp_a)

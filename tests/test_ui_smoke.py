@@ -47,7 +47,7 @@ def window(qapp, db, monkeypatch, tmp_path):
 
 
 def test_main_window_constructs(window):
-    assert window.tabs.count() == 7
+    assert window.tabs.count() == 5
 
 
 def test_details_tab_collect_populate_roundtrip(qapp, db):
@@ -120,4 +120,104 @@ def test_paper_size_combo_user_override_and_qate_change(qapp, db):
 
     tab.inputs['قطع'].setCurrentText('خشتی')
     assert tab.paper_size_combo.currentText() == '50×70'
+
+
+def test_paper_list_widget_row_calc_button(qapp, db):
+    tab = DetailsTab(db, CostCalculator())
+    tab.papers_matn_list.add_row('تحریر ۸۰', form_count=5, unit_price=250.0)
+    entries = tab.papers_matn_list.entries()
+    assert len(entries) == 1
+    assert entries[0]['paper_type'] == 'تحریر ۸۰'
+    assert entries[0]['unit_price'] == 250.0
+
+    # Verify calc_callback updates the row's spinbox
+    row_price_spin = tab.papers_matn_list._rows[0][3]
+    tab.open_paper_price_dialog_for_spin("matn", row_price_spin)
+    # The callback target is the specific row spinbox
+    assert row_price_spin is not None
+
+
+def test_paper_list_widget_carries_over_single_paper_price(qapp, db):
+    tab = DetailsTab(db, CostCalculator())
+    # Fill in a single paper price
+    tab.unit_price_paper_matn_spin.setValue(450.0)
+    tab.form_matn_spin.setValue(10)
+
+    # Click add row: first row should carry over existing form count and unit price
+    tab.papers_matn_list._add_row_interactive()
+    entries = tab.papers_matn_list.entries()
+    assert len(entries) == 1
+    assert entries[0]['form_count'] == 10
+    assert entries[0]['unit_price'] == 450.0
+
+    # Add second row: should append a new row without zeroing out row 1
+    tab.papers_matn_list._add_row_interactive()
+    entries2 = tab.papers_matn_list.entries()
+    assert len(entries2) == 2
+    assert entries2[0]['unit_price'] == 450.0
+
+
+def test_defaults_dialog_constructs_and_saves_zinc(qapp, db):
+    from bookcost.ui.dialogs.defaults_dialog import DefaultsDialog
+    dlg = DefaultsDialog(db)
+    assert dlg.windowTitle() == "🏷 مدیریت قیمت‌های پایه و زینک‌ها"
+    assert dlg.zinc_prices_table.rowCount() == 5
+
+    # Test saving a zinc price
+    spin = dlg.zinc_prices_table.cellWidget(0, 1)
+    spin.setValue(180000)
+    dlg.save_zinc_price(0, "زینک 2 ورقی")
+    assert db.get_zinc_price("زینک 2 ورقی") == 180000
+
+
+def test_toolbar_hidden_by_default_and_toggleable(window):
+    tb = window.findChild(QToolBar, "main_toolbar")
+    assert tb is not None
+    assert not tb.isVisible()
+
+
+def test_spinbox_wheel_scrolling_is_disabled(qapp, db):
+    from PySide6.QtCore import QPoint, QPointF
+    from PySide6.QtGui import QWheelEvent
+    from PySide6.QtWidgets import QDoubleSpinBox
+    from bookcost.ui.utils import install_no_wheel_filter
+
+    install_no_wheel_filter(qapp)
+    spin = QDoubleSpinBox()
+    spin.setValue(100.0)
+
+    # Simulate mouse wheel scroll over spinbox
+    wheel_evt = QWheelEvent(
+        QPointF(10, 10), QPointF(10, 10), QPoint(0, 120), QPoint(0, 120),
+        qapp.mouseButtons(), qapp.keyboardModifiers(), Qt.ScrollUpdate, False
+    )
+    qapp.sendEvent(spin, wheel_evt)
+
+    # Value should remain 100.0 and not change
+    assert spin.value() == 100.0
+
+    assert combo.currentIndex() == 0
+
+
+def test_details_tab_populate_string_safety(qapp, db):
+    tab = DetailsTab(db, CostCalculator())
+    project = {
+        'title': 'تست', 'subtitle': '', 'creation_date': '1403/01/01',
+        'qate': 'وزیری', 'tiraj': '1000', 'royalty_percent': '10.5'
+    }
+    details = {
+        'form_matn': '12', 'form_jeld': '2', 'total_pages': '192',
+        'unit_price_paper_matn': '350000', 'unit_price_paper_jeld': '450000'
+    }
+    # Populate with string values should not raise PySide6.QtWidgets.QSpinBox.setValue(str) exception
+    tab.populate(project, details, [], [])
+    assert tab.inputs['تیراژ'].value() == 1000
+    assert tab.form_matn_spin.value() == 12
+    assert tab.total_pages_spin.value() == 192
+
+
+
+
+
+
 

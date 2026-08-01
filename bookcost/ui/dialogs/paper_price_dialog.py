@@ -15,16 +15,18 @@ class PaperPriceDialog(QDialog):
         "دستی"
     )
 
-    def __init__(self, db: BookDatabase, target, parent=None):
+    def __init__(self, db: BookDatabase, target, current_price: float = 0.0, parent=None):
         super().__init__(parent)
         self.db = db
         self.target = target          # "matn" or "jeld"
-        self.result_value = 0.0
+        self.result_value = current_price
         self.setLayoutDirection(Qt.RightToLeft)
         title = "کاغذ متن" if target == "matn" else "کاغذ جلد"
         self.setWindowTitle(f"🧮 محاسبه قیمت واحد {title}")
         self.setMinimumWidth(500)
         self._setup_ui()
+        if current_price > 0:
+            self.dlg_manual_spin.setValue(current_price)
         self._load_library()
 
     def _setup_ui(self):

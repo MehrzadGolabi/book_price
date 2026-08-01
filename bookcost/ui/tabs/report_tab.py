@@ -29,7 +29,7 @@ class ReportTab(QWidget):
 
         btn_pdf = QPushButton("تولید و ذخیره فایل PDF")
         btn_pdf.setStyleSheet("padding: 10px; font-weight: bold; background-color: #2c3e50; color: white;")
-        btn_pdf.clicked.connect(self.generate_requested.emit)
+        btn_pdf.clicked.connect(lambda *_: self.generate_requested.emit())
         layout.addWidget(btn_pdf)
 
         layout.addStretch()

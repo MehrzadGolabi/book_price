@@ -298,7 +298,7 @@ QSpinBox, QDoubleSpinBox {
 /* Paper pre-calc tab: a two-column grid, not a single narrow label:field
    column, so these numeric fields need real width to stay usable */
 QDoubleSpinBox#paperCalcField, QSpinBox#paperCalcField {
-    max-width: 16777215px;
+    max-width: none;
     min-width: 160px;
 }
 

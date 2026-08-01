@@ -22,6 +22,7 @@ from bookcost.core.fields import (
     AUTO_COST_FIELDS, COST_FIELD_COLUMNS, DYNAMIC_TYPE_CATEGORIES,
     TYPE_FIELD_COLUMNS, default_calc_type,
 )
+from bookcost.ui.dialogs.defaults_dialog import DefaultsDialog
 from bookcost.ui.dialogs.paper_price_dialog import PaperPriceDialog
 from bookcost.ui.widgets.custom_cost_widget import CustomCostWidget
 from bookcost.ui.widgets.paper_list_widget import PaperListWidget
@@ -319,7 +320,7 @@ class DetailsTab(QWidget):
 
         calc_btn = QPushButton("ثبت اطلاعات و انجام محاسبات نهایی")
         calc_btn.setStyleSheet("padding: 10px; font-weight: bold; background-color: #27ae60; color: white;")
-        calc_btn.clicked.connect(self.calculate_requested.emit)
+        calc_btn.clicked.connect(lambda *_: self.calculate_requested.emit())
 
         scroll_layout.addLayout(form_layout)
         scroll_layout.addWidget(calc_btn)
@@ -376,6 +377,10 @@ class DetailsTab(QWidget):
         self.calc_group = QGroupBox("② پیش از چاپ — محاسبات هوشمند کاغذ و زینک")
         calc_layout = QFormLayout()
         self._precalc_layout = calc_layout
+        defaults_btn = QPushButton("🏷 مدیریت قیمت‌های پایه و زینک‌ها...")
+        defaults_btn.setStyleSheet("padding: 3px 8px; color: #2a6496; background: transparent; border: 1px solid #2a6496; border-radius: 4px;")
+        defaults_btn.clicked.connect(self.open_defaults_dialog)
+        calc_layout.addRow("", defaults_btn)
 
         # Text block (matn) setup
         self.form_matn_spin = QSpinBox()
@@ -392,6 +397,8 @@ class DetailsTab(QWidget):
         self.unit_price_paper_matn_spin = QDoubleSpinBox()
         self.unit_price_paper_matn_spin.setMaximum(9999999999.99)
         self.unit_price_paper_matn_spin.setGroupSeparatorShown(True)
+        self.unit_price_paper_matn_spin.setToolTip(
+            "قیمت هر ورق کاغذ متن (از پنجره محاسبه درج می‌شود، ولی همیشه قابل ویرایش و بازنویسی دستی است).")
 
         self.form_matn_spin.setToolTip(
             "به‌صورت خودکار پیشنهاد می‌شود اما همیشه قابل ویرایش است.")
@@ -426,6 +433,8 @@ class DetailsTab(QWidget):
             price_lookup=self.db.get_latest_paper_price,
             dims_lookup=self.db.get_paper_dims,
             default_forms=self.form_matn_spin.value,
+            default_price=self.unit_price_paper_matn_spin.value,
+            calc_callback=lambda spin: self.open_paper_price_dialog_for_spin("matn", spin),
         )
         calc_layout.addRow("چند نوع کاغذ متن:", self.papers_matn_list)
 
@@ -446,6 +455,8 @@ class DetailsTab(QWidget):
         self.unit_price_paper_jeld_spin = QDoubleSpinBox()
         self.unit_price_paper_jeld_spin.setMaximum(9999999999.99)
         self.unit_price_paper_jeld_spin.setGroupSeparatorShown(True)
+        self.unit_price_paper_jeld_spin.setToolTip(
+            "قیمت هر ورق کاغذ جلد (از پنجره محاسبه درج می‌شود، ولی همیشه قابل ویرایش و بازنویسی دستی است).")
 
         calc_layout.addRow("تعداد فرم جلد (قابل ویرایش):", self.form_jeld_spin)
         calc_layout.addRow("", self.double_sided_jeld_chk)
@@ -478,6 +489,8 @@ class DetailsTab(QWidget):
             price_lookup=self.db.get_latest_paper_price,
             dims_lookup=self.db.get_paper_dims,
             default_forms=self.form_jeld_spin.value,
+            default_price=self.unit_price_paper_jeld_spin.value,
+            calc_callback=lambda spin: self.open_paper_price_dialog_for_spin("jeld", spin),
         )
         calc_layout.addRow("چند نوع کاغذ جلد:", self.papers_jeld_list)
 
@@ -822,14 +835,24 @@ class DetailsTab(QWidget):
         self._update_paper_readouts()
         self._update_running_subtotal()
 
-    def open_paper_price_dialog(self, target):
-        dlg = PaperPriceDialog(self.db, target, parent=self)
+    def open_paper_price_dialog_for_spin(self, target: str, price_spin):
+        dlg = PaperPriceDialog(self.db, target, current_price=price_spin.value(), parent=self)
         dlg.setAttribute(Qt.WA_DeleteOnClose)
         if dlg.exec() == QDialog.Accepted:
-            if target == "matn":
-                self.unit_price_paper_matn_spin.setValue(dlg.result_value)
-            else:
-                self.unit_price_paper_jeld_spin.setValue(dlg.result_value)
+            price_spin.setValue(dlg.result_value)
+
+    def open_paper_price_dialog(self, target: str):
+        price_spin = (self.unit_price_paper_matn_spin
+                      if target == "matn"
+                      else self.unit_price_paper_jeld_spin)
+        self.open_paper_price_dialog_for_spin(target, price_spin)
+
+    def open_defaults_dialog(self):
+        dlg = DefaultsDialog(self.db, parent=self)
+        dlg.exec()
+        self.refresh_zinc_price_labels()
+        self._update_zinc_size_labels()
+        self.auto_calculate_costs()
 
     def _on_qate_changed(self):
         qate = self.inputs['قطع'].currentText()
@@ -1149,8 +1172,8 @@ class DetailsTab(QWidget):
         self.inputs['زیر عنوان کتاب'].setText(project['subtitle'] if project['subtitle'] else '')
         self.inputs['تاریخ'].setText(project['creation_date'])
         self.inputs['قطع'].setCurrentText(project['qate'] if project['qate'] else '')
-        self.inputs['تیراژ'].setValue(project['tiraj'])
-        self.royalty_input.setValue(project['royalty_percent'])
+        self.inputs['تیراژ'].setValue(int(float(project['tiraj'] or 0)))
+        self.royalty_input.setValue(float(project['royalty_percent'] or 0.0))
 
         is_series = bool(volumes) or bool(project.get('series_name')) \
             or (project.get('series_volumes') or 1) > 1
@@ -1183,7 +1206,7 @@ class DetailsTab(QWidget):
 
         color_indices = {1: 0, 2: 1, 4: 2}
         if details.get('form_matn') is not None:
-            self.form_matn_spin.setValue(details['form_matn'])
+            self.form_matn_spin.setValue(int(float(details['form_matn'])))
         if details.get('is_double_sided_matn') is not None:
             self.double_sided_matn_chk.setChecked(bool(details['is_double_sided_matn']))
         if details.get('color_count_matn') is not None:
@@ -1191,10 +1214,10 @@ class DetailsTab(QWidget):
         if details.get('zinc_size_matn'):
             self.zinc_size_matn_combo.setCurrentText(details['zinc_size_matn'])
         if details.get('unit_price_paper_matn') is not None:
-            self.unit_price_paper_matn_spin.setValue(details['unit_price_paper_matn'])
+            self.unit_price_paper_matn_spin.setValue(float(details['unit_price_paper_matn']))
 
         if details.get('form_jeld') is not None:
-            self.form_jeld_spin.setValue(details['form_jeld'])
+            self.form_jeld_spin.setValue(int(float(details['form_jeld'])))
         if details.get('is_double_sided_jeld') is not None:
             self.double_sided_jeld_chk.setChecked(bool(details['is_double_sided_jeld']))
         if details.get('color_count_jeld') is not None:
@@ -1202,7 +1225,7 @@ class DetailsTab(QWidget):
         if details.get('zinc_size_jeld'):
             self.zinc_size_jeld_combo.setCurrentText(details['zinc_size_jeld'])
         if details.get('unit_price_paper_jeld') is not None:
-            self.unit_price_paper_jeld_spin.setValue(details['unit_price_paper_jeld'])
+            self.unit_price_paper_jeld_spin.setValue(float(details['unit_price_paper_jeld']))
 
         if details.get('waste_percent') is not None:
             self.waste_percent_spin.setValue(float(details['waste_percent']))
@@ -1210,7 +1233,7 @@ class DetailsTab(QWidget):
             self.waste_percent_spin.setValue(5.0)
 
         if details.get('total_pages') is not None:
-            self.total_pages_spin.setValue(details['total_pages'] or 0)
+            self.total_pages_spin.setValue(int(float(details['total_pages'] or 0)))
 
         if details.get('book_width') is not None:
             self.book_width_spin.setValue(float(details['book_width']))

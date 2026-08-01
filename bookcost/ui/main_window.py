@@ -28,6 +28,8 @@ from bookcost.core.db import BookDatabase, is_valid_database_file
 from bookcost.core.project_io import FILE_EXTENSION, load_project_file, save_project_file
 from bookcost.reporting.pdf_report import ReportData, build_pdf_report
 from bookcost.resources import resource_path
+from bookcost.ui.dialogs.defaults_dialog import DefaultsDialog
+from bookcost.ui.dialogs.paper_price_dialog import PaperPriceDialog
 from bookcost.ui.tabs.calc_tab import CalcTab
 from bookcost.ui.tabs.defaults_tab import DefaultsTab
 from bookcost.ui.tabs.details_tab import DetailsTab
@@ -124,18 +126,34 @@ class BookCostCalculator(QMainWindow):
         self.calc_tab = CalcTab()
         self.report_tab = ReportTab()
         self.paper_calc_tab = PaperCalcTab(self.db, self.calculator)
-        self.defaults_tab = DefaultsTab(self.db)
 
         self.tabs.addTab(self.projects_tab,   "مدیریت پروژه‌ها")
         self.tabs.addTab(self.details_tab,    "ورود اطلاعات و هزینه‌ها")
         self.tabs.addTab(self.pricing_tab,    "قیمت‌گذاری و سودآوری")
         self.tabs.addTab(self.calc_tab,       "محاسبات نهایی")
         self.tabs.addTab(self.report_tab,     "گزارش‌گیری (PDF)")
-        self.tabs.addTab(self.paper_calc_tab, "محاسبات پیش‌پردازش کاغذ")
-        self.tabs.addTab(self.defaults_tab,   "مدیریت قیمت‌های پایه")
 
     def _build_chrome(self):
         file_menu = self.menuBar().addMenu("فایل")
+
+        open_action = QAction("بازکردن پروژه", self)
+        open_action.setShortcut(QKeySequence("Ctrl+O"))
+        open_action.triggered.connect(self.load_selected_project)
+
+        save_action = QAction("ذخیره پروژه", self)
+        save_action.setShortcut(QKeySequence("Ctrl+S"))
+        save_action.triggered.connect(self.save_project_to_db)
+
+        delete_action = QAction("حذف پروژه", self)
+        delete_action.triggered.connect(self.delete_project)
+
+        exit_action = QAction("خروج", self)
+        exit_action.triggered.connect(self.close)
+
+        file_menu.addAction(open_action)
+        file_menu.addAction(save_action)
+        file_menu.addSeparator()
+
         export_project_action = QAction("خروجی گرفتن از پروژه (فایل ketab.)...", self)
         export_project_action.triggered.connect(self.export_project_to_file)
         file_menu.addAction(export_project_action)
@@ -143,51 +161,40 @@ class BookCostCalculator(QMainWindow):
         import_project_action.triggered.connect(self.import_project_from_file)
         file_menu.addAction(import_project_action)
         file_menu.addSeparator()
+
+        file_menu.addAction(delete_action)
+        file_menu.addSeparator()
+
         backup_db_action = QAction("پشتیبان‌گیری از کل دیتابیس...", self)
         backup_db_action.triggered.connect(self.backup_database)
         file_menu.addAction(backup_db_action)
         restore_db_action = QAction("بازیابی دیتابیس از فایل پشتیبان...", self)
         restore_db_action.triggered.connect(self.restore_database)
         file_menu.addAction(restore_db_action)
+        file_menu.addSeparator()
 
-        settings_menu = self.menuBar().addMenu("تنظیمات")
-        paper_calc_menu_action = QAction("محاسبات پیش‌پردازش کاغذ", self)
-        paper_calc_menu_action.triggered.connect(
-            lambda: self.tabs.setCurrentWidget(self.paper_calc_tab))
-        settings_menu.addAction(paper_calc_menu_action)
-        defaults_menu_action = QAction("مدیریت قیمت‌های پایه", self)
-        defaults_menu_action.triggered.connect(
-            lambda: self.tabs.setCurrentWidget(self.defaults_tab))
-        settings_menu.addAction(defaults_menu_action)
+        file_menu.addAction(exit_action)
 
-        toolbar = QToolBar("نوار ابزار اصلی")
+        toolbar = QToolBar("نوار ابزار اصلی", self)
+        toolbar.setObjectName("main_toolbar")
+        toolbar.setVisible(False)
         self.addToolBar(toolbar)
 
-        open_action = QAction("بازکردن پروژه", self)
-        open_action.setShortcut(QKeySequence("Ctrl+O"))
-        open_action.triggered.connect(self.load_selected_project)
         toolbar.addAction(open_action)
-
-        save_action = QAction("ذخیره پروژه", self)
-        save_action.setShortcut(QKeySequence("Ctrl+S"))
-        save_action.triggered.connect(self.save_project_to_db)
         toolbar.addAction(save_action)
-
         toolbar.addSeparator()
-
-        import_defaults_action = QAction("دریافت قیمت‌های پایه", self)
-        import_defaults_action.triggered.connect(self.import_default_prices)
-        toolbar.addAction(import_defaults_action)
-
-        toolbar.addSeparator()
-
-        delete_action = QAction("حذف پروژه", self)
-        delete_action.triggered.connect(self.delete_project)
         toolbar.addAction(delete_action)
-
-        exit_action = QAction("خروج", self)
-        exit_action.triggered.connect(self.close)
+        toolbar.addSeparator()
         toolbar.addAction(exit_action)
+
+        settings_menu = self.menuBar().addMenu("تنظیمات")
+        defaults_menu_action = QAction("مدیریت قیمت‌های پایه", self)
+        defaults_menu_action.triggered.connect(self.open_defaults_dialog)
+        settings_menu.addAction(defaults_menu_action)
+
+        toggle_toolbar_action = toolbar.toggleViewAction()
+        toggle_toolbar_action.setText("نمایش نوار ابزار اصلی")
+        settings_menu.addAction(toggle_toolbar_action)
 
         self.status_project_label = QLabel("پروژه‌ای باز نشده است")
         self.status_save_label = QLabel("")
@@ -204,12 +211,12 @@ class BookCostCalculator(QMainWindow):
 
         self.report_tab.generate_requested.connect(self.generate_pdf)
 
-        self.defaults_tab.paper_library_requested.connect(
-            lambda: self.tabs.setCurrentWidget(self.paper_calc_tab))
-        self.defaults_tab.zinc_prices_changed.connect(self._on_zinc_prices_changed)
-        self.defaults_tab.cost_applied.connect(self.details_tab.set_cost_value)
-
         self.tabs.currentChanged.connect(self._on_tab_changed)
+
+    def open_defaults_dialog(self):
+        dlg = DefaultsDialog(self.db, parent=self)
+        dlg.exec()
+        self._on_zinc_prices_changed()
 
     # ── Cross-tab reactions ────────────────────────────────────────────────
 
@@ -557,8 +564,6 @@ class BookCostCalculator(QMainWindow):
         self.projects_tab.refresh()
         self.details_tab.reload_categories()
         self.details_tab.refresh_zinc_price_labels()
-        self.defaults_tab.reload()
-        self.defaults_tab.load_zinc_prices_table()
         self.paper_calc_tab.load_paper_calculations()
         QMessageBox.information(
             self, "موفقیت",
