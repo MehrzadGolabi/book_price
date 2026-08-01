@@ -98,3 +98,26 @@ def test_save_and_reload_project_through_window(window):
     assert win.details_tab.cost_values()['هزینه تالیف'] == 3_000_000
     assert win.pricing_tab.multiplier() == 3.0
     assert win.pricing_tab.distribution_pct() == 40.0
+
+
+def test_paper_size_combo_user_override_and_qate_change(qapp, db):
+    tab = DetailsTab(db, CostCalculator())
+    # Initial default for وزیری is 70×100
+    assert tab.inputs['قطع'].currentText() == 'وزیری'
+    assert tab.paper_size_combo.currentText() == '70×100'
+
+    # User manually overrides paper_size_combo to 60×90
+    tab.paper_size_combo.setCurrentText('60×90')
+    assert tab.paper_size_combo.currentText() == '60×90'
+
+    # Page count changes should NOT overwrite user's paper size choice
+    tab.total_pages_spin.setValue(200)
+    assert tab.paper_size_combo.currentText() == '60×90'
+
+    # Changing trim size (قطع) SHOULD set paper_size_combo to recommended default for new qate
+    tab.inputs['قطع'].setCurrentText('رقعی')
+    assert tab.paper_size_combo.currentText() == '60×90'
+
+    tab.inputs['قطع'].setCurrentText('خشتی')
+    assert tab.paper_size_combo.currentText() == '50×70'
+

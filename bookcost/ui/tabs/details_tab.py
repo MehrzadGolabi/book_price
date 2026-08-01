@@ -64,7 +64,7 @@ class DetailsTab(QWidget):
         self._connect_signals()
         self.refresh_zinc_price_labels()
         self._update_zinc_size_labels()
-        self.suggest_optimal_layout()
+        self._on_qate_changed()
         self._refresh_layout_widget()
         self._update_paper_readouts()
         self._update_running_subtotal()
@@ -500,7 +500,7 @@ class DetailsTab(QWidget):
         return self.calc_group
 
     def _connect_signals(self):
-        self.inputs['قطع'].currentIndexChanged.connect(self.suggest_optimal_layout)
+        self.inputs['قطع'].currentIndexChanged.connect(self._on_qate_changed)
         self.total_pages_spin.valueChanged.connect(self.suggest_optimal_layout)
         self.double_sided_matn_chk.toggled.connect(self.suggest_optimal_layout)
         self.book_type_combo.currentTextChanged.connect(
@@ -831,6 +831,21 @@ class DetailsTab(QWidget):
             else:
                 self.unit_price_paper_jeld_spin.setValue(dlg.result_value)
 
+    def _on_qate_changed(self):
+        qate = self.inputs['قطع'].currentText()
+        layout = self.calculator.suggest_layout(
+            qate, self.total_pages_spin.value(),
+            book_w=self.book_width_spin.value(),
+            book_h=self.book_height_spin.value(),
+            paper_size_str=self.paper_size_combo.currentText().replace('×', 'x'),
+        )
+        if layout:
+            if layout['paper_size']:
+                self.paper_size_combo.setCurrentText(layout['paper_size'])
+            if layout['zinc']:
+                self.zinc_size_matn_combo.setCurrentText(layout['zinc'])
+        self.suggest_optimal_layout()
+
     def suggest_optimal_layout(self):
         qate = self.inputs['قطع'].currentText()
         total_pages = self.total_pages_spin.value()
@@ -850,10 +865,6 @@ class DetailsTab(QWidget):
 
         self._form_layout.setRowVisible(self.book_dims_row_widget, layout['is_custom'])
         self._form_layout.setRowVisible(self.orientation_label, layout['is_custom'])
-
-        self.paper_size_combo.setCurrentText(layout['paper_size'])
-        if layout['zinc']:
-            self.zinc_size_matn_combo.setCurrentText(layout['zinc'])
 
         self.orientation_label.setText(layout['orientation_label'] or '')
 
